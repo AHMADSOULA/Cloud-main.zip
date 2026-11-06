@@ -130,34 +130,27 @@ class CloudConsole:
         await page.wait_for_timeout(3000)
         await self._shot(page, "⏳ خطوة 6: تم طلب الإنشاء، في انتظار Google...")
 
-        # ✅ الفحص السريع (كل ثانية) باش نمسكو الخطأ فوراً
-        for _ in range(10): 
+        # ✅ الفحص السريع جداً (كل ثانية) باش نمسكو الخطأ فوراً
+        for _ in range(5): 
             await page.wait_for_timeout(1000)
-            try:
-                body_text = (await page.locator("body").inner_text()).lower()
+            
+            error_text = await page.evaluate("""
+                () => {
+                    const body = document.body.innerText.toLowerCase();
+                    if (body.includes('service with this name already exists') || body.includes('already exists')) return 'service_already_exists';
+                    if (body.includes('make sure all fields are correct') || body.includes('container image url is required')) return 'invalid_docker_image';
+                    return null;
+                }
+            """)
+            
+            if error_text:
+                log.error(f"❌ خطأ سريع: {error_text}")
+                raise RuntimeError(error_text)
+            
+            if "run/create" not in page.url:
+                return # دخلنا لصفحة الخدمة، معناها نجح
                 
-                # فحص رسالة الخطأ ديال "الخدمة كاينة"
-                if "already exists" in body_text or "service with this name" in body_text:
-                    log.error("❌ الخدمة كاينة بالفعل (Service already exists)!")
-                    raise RuntimeError("service_already_exists")
-                
-                # فحص واش حقل الحاوية بقا خاوي
-                if "container image url is required" in body_text:
-                    log.error("❌ حقل الحاوية خاوي!")
-                    raise RuntimeError("invalid_docker_image")
-
-                # إلا خرجنا من صفحة الإنشاء، معناها نجح
-                if "run/create" not in page.url:
-                    return 
-                    
-            except Exception as e:
-                if "service_already_exists" in str(e) or "invalid_docker_image" in str(e):
-                    raise
-                pass
-        
-        # إلا بقينا فصفحة الإنشاء بعد 10 ثواني
-        if "run/create" in page.url:
-            raise RuntimeError("invalid_docker_image")
+        raise RuntimeError("invalid_docker_image")
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
@@ -165,15 +158,20 @@ class CloudConsole:
 
         for i in range(40):
             try:
-                has_error = await page.evaluate("""
+                # ✅ كنقلبو على الخطأ فكل دورة باش نوقفو دغيا
+                error_text = await page.evaluate("""
                     () => {
                         const body = document.body.innerText.toLowerCase();
-                        return body.includes('deployment failed') || body.includes('revision is not ready');
+                        if (body.includes('service with this name already exists') || body.includes('already exists')) return 'service_already_exists';
+                        if (body.includes('deployment failed') || body.includes('revision is not ready') || body.includes('container failed to start')) return 'deployment_failed';
+                        if (body.includes('make sure all fields are correct')) return 'invalid_docker_image';
+                        return null;
                     }
                 """)
-                if has_error:
-                    log.error("❌ فشل النشر (Container failed)")
-                    raise RuntimeError("deployment_failed")
+                
+                if error_text:
+                    log.error(f"❌ خطأ أثناء الانتظار: {error_text}")
+                    raise RuntimeError(error_text)
 
                 url = await page.evaluate("""
                     () => {
@@ -189,10 +187,10 @@ class CloudConsole:
                     await self._shot(page, "✅ خطوة 7: تم النشر بنجاح! تم العثور على الرابط.")
                     return url
             except Exception as e:
-                if "deployment_failed" in str(e):
+                if "service_already_exists" in str(e) or "deployment_failed" in str(e) or "invalid_docker_image" in str(e):
                     raise
 
-            await page.wait_for_timeout(2500)
+            await page.wait_for_timeout(2000)
             if (i + 1) % 10 == 0:
                 try: 
                     await page.reload(wait_until="domcontentloaded", timeout=30000)

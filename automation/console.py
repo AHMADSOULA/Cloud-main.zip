@@ -18,7 +18,6 @@ class CloudConsole:
         try:
             if not page or page.is_closed(): return
             path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
-            # ✅ صورة سريعة وخفيفة
             await page.screenshot(path=path, full_page=False, type="jpeg", quality=50, timeout=5000) 
             with open(path, "rb") as f:
                 try:
@@ -92,11 +91,22 @@ class CloudConsole:
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         
-        await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
+        # ✅ محاولة فتح الصفحة مع إعادة المحاولة (Retry) 3 مرات
+        for attempt in range(3):
+            try:
+                await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
+                break
+            except Exception as e:
+                if "Page crashed" in str(e) or "Target crashed" in str(e):
+                    log.warning(f"⚠️ الصفحة طاحت، إعادة المحاولة {attempt+1}...")
+                    await page.wait_for_timeout(2000)
+                    continue
+                else:
+                    raise RuntimeError(f"فشل فتح صفحة Cloud Run: {e}")
+
         await page.wait_for_timeout(4000)
 
         try:
-            # إدخال صورة الدوكر
             label = page.get_by_text("Container Image URL").first
             await label.click(timeout=10000)
             await page.wait_for_timeout(500)
@@ -104,7 +114,7 @@ class CloudConsole:
             await page.keyboard.press("Backspace")
             await page.keyboard.type(image, delay=10)
 
-            # ✅ تغيير اسم الخدمة (Service Name) لاسم عشوائي باش ما يوقعش خطأ "already exists"
+            # ✅ تغيير اسم الخدمة لاسم عشوائي باش ما يوقعش خطأ "already exists"
             await page.wait_for_timeout(1000)
             service_name_input = page.get_by_role("textbox", name="Service name").first
             if await service_name_input.count() > 0 and await service_name_input.is_visible():
@@ -120,6 +130,7 @@ class CloudConsole:
             raise RuntimeError("image_field_empty")
 
         await page.wait_for_timeout(2000)
+        await self._shot(page, "") # صورة 6
 
         try:
             try: await page.get_by_role("radio", name="Allow public access").click(timeout=3000)
@@ -160,6 +171,8 @@ class CloudConsole:
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
+        await self._shot(page, "") # صورة 7
+        
         for i in range(40):
             try:
                 error_text = await page.evaluate("""
@@ -185,6 +198,7 @@ class CloudConsole:
                     }
                 """)
                 if url: 
+                    await self._shot(page, "") # صورة 8 (النجاح)
                     return url
             except Exception as e:
                 if "service_already_exists" in str(e) or "deployment_failed" in str(e):

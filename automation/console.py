@@ -106,6 +106,9 @@ class CloudConsole:
             raise RuntimeError("image_field_empty")
 
         await page.wait_for_timeout(3000)
+        
+        # ✅ تصوير بعد إدخال الصورة
+        await self._shot(page, "📸 خطوة 6: تم إدخال صورة الحاوية، جاري ضبط الإعدادات...")
 
         try:
             try: await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
@@ -118,19 +121,25 @@ class CloudConsole:
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
 
+            # ✅ تصوير قبل الضغط على Create
+            await self._shot(page, "📸 خطوة 6: جاري الضغط على Create...")
+
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=8000)
         except Exception as e:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ فحص سريع (10 ثواني كافيين باش نعرفو واش كاين شي مشكل)
+        # ✅ تصوير بعد الضغط
+        await page.wait_for_timeout(3000)
+        await self._shot(page, "⏳ خطوة 6: تم طلب الإنشاء، في انتظار استجابة Google...")
+
+        # فحص سريع
         for _ in range(5):
             await page.wait_for_timeout(2000)
             try:
                 body_text = (await page.locator("body").inner_text()).lower()
                 
-                # إلا لقينا شي خطأ أحمر
                 error_found = await page.evaluate("""
                     () => {
                         const alerts = document.querySelectorAll('[role="alert"], .error, .mat-error, .banner-error');
@@ -148,9 +157,8 @@ class CloudConsole:
                     else:
                         raise RuntimeError("invalid_docker_image")
                 
-                # إلا كان مازال فصفحة الإنشاء بعد 10 ثواني
                 if "run/create" not in page.url:
-                    break # دخلنا لصفحة الخدمة، معناها نجح
+                    break 
             except Exception as e:
                 if "service_already_exists" in str(e) or "invalid_docker_image" in str(e):
                     raise
@@ -161,9 +169,12 @@ class CloudConsole:
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
+        
+        # ✅ تصوير البداية
+        await self._shot(page, "⏳ خطوة 7: جاري انتظار اكتمال النشر وظهور الرابط...")
+
         for i in range(40):
             try:
-                # ✅ فحص سريع واش كاين خطأ فـ النشر
                 has_error = await page.evaluate("""
                     () => {
                         const body = document.body.innerText.toLowerCase();
@@ -184,14 +195,20 @@ class CloudConsole:
                         return null;
                     }
                 """)
-                if url: return url
+                if url: 
+                    # ✅ تصوير النجاح
+                    await self._shot(page, "✅ خطوة 7: تم النشر بنجاح! تم العثور على الرابط.")
+                    return url
             except Exception as e:
                 if "deployment_failed" in str(e):
                     raise
 
             await page.wait_for_timeout(2500)
             if (i + 1) % 10 == 0:
-                try: await page.reload(wait_until="domcontentloaded", timeout=30000)
+                try: 
+                    await page.reload(wait_until="domcontentloaded", timeout=30000)
+                    # تصوير بعد التحديث (كل 25 ثانية تقريباً)
+                    await self._shot(page, "⏳ خطوة 7: جاري التحديث وانتظار الرابط...")
                 except: pass
 
         raise RuntimeError("timeout_waiting_for_url")

@@ -102,8 +102,8 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cost > 0 and not is_admin(user.id):
             await db.update_points(user.id, -cost)
         
-        msg = await update.message.reply_text(f"🚀 جاري النشر تلقائياً باستخدام حاوية: <b>{container['name']}</b>\n⏳ جاري التنفيذ...", parse_mode=ParseMode.HTML)
-        asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, container['image'], msg, context, cost))
+        # ✅ بدا النشر بلا رسالة
+        asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, container['image'], update.effective_message, context, cost))
         return
 
     await update.message.reply_text("✅ تم استلام الرابط.\nالآن اختر الحاوية التي تريد النشر عليها:", reply_markup=containers_menu(containers))
@@ -173,9 +173,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if cost > 0 and not is_admin(user.id):
             await db.update_points(user.id, -cost)
-            
-        await query.message.edit_text("🚀 بدأ النشر باستخدام حاوية البوت...\n⏳ جاري التنفيذ...", parse_mode=ParseMode.HTML)
         
+        # ✅ بدا النشر بلا رسالة
         default_image = "docker.io/ajndjd2/ahmed-vip1"
         asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, default_image, query.message, context, cost))
 
@@ -198,8 +197,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cost > 0 and not is_admin(user.id):
             await db.update_points(user.id, -cost)
         
-        await query.message.edit_text(f"🚀 بدأ النشر باستخدام حاوية: <b>{container['name']}</b>\n⏳ جاري التنفيذ...", parse_mode=ParseMode.HTML)
-        
+        # ✅ بدا النشر بلا رسالة
         asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, container['image'], query.message, context, cost))
 
     elif data == "admin_panel":
@@ -260,6 +258,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
+        # ✅ هنا كنبداو العملية بلا ما نصيفطو شي رسالة
         result = await run_sso_flow(ctx, sso_url, image=image, sender=msg, user_tag="user")
         
         if result.get("success"):
@@ -267,8 +266,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
             flag = result.get("flag", "🌍")
             await db.increment_deploy(user_id)
             
-            try: await msg.delete()
-            except: pass
             await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
             for dark in DARK_FILES:
@@ -278,9 +275,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                     bio.name = f"{dark['name']}_{flag} - {domain}.dark"
                     await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
         else:
-            try: await msg.delete()
-            except: pass
-            
             err_code = result.get("error", "")
             refund_text = ""
             
@@ -305,15 +299,12 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
             elif err_code == "service_already_exists":
                 error_msg = f"❌ يوجد خدمة تعمل بنفس الاسم.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
             else:
-                # ✅ التعديل: إلا كان الخطأ خاوي، كنكتبو رسالة واضحة
                 detail = result.get("message") or "حدث خطأ غير متوقع أثناء التنفيذ."
                 error_msg = f"❌ فشل النشر:\n{detail}{refund_text}"
             
             await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:
-        try: await msg.delete()
-        except: pass
         if cost > 0 and not is_admin(user_id):
             await db.update_points(user_id, cost)
         await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e) or 'غير معروف'}\nتم اعادة نقاط")

@@ -1,0 +1,5 @@
+python-telegram-bot==21.6
+playwright==1.48.0
+python-dotenv==1.0.1
+aiosqlite==0.20.0
+colorlog==6.8.2

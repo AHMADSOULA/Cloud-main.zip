@@ -80,12 +80,9 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         try: await console.step1_welcome_screen(page)
         except: pass
         
-        # ✅ هنا السر: نستناو حتى يدخل الحساب أوتوماتيكياً لـ Dashboard
         try:
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
-        except Exception as e:
-            log.warning(f"⚠️ ما وصلناش Dashboard بـ URL، نحاولو نكملو... ({e})")
-        
+        except: pass
         await page.wait_for_timeout(3000)
         await console._shot(page, "📸 خطوة 2: بعد الدخول للحساب")
         
@@ -99,11 +96,19 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         await page.wait_for_timeout(2000)
         await console._shot(page, "📸 خطوة 3: بعد قبول الشروط")
 
+        authuser = extract_authuser(page.url)
+
         # 4
         await update_status(4, "تفعيل API")
-        authuser = extract_authuser(page.url)
-        try: await console.step3_enable_api(page, project_id, authuser)
-        except: pass
+        try: 
+            await console.step3_enable_api(page, project_id, authuser)
+        except Exception as e:
+            if "crashed" in str(e).lower():
+                log.warning("⚠️ الصفحة طاحت فـ API، إعادة المحاولة...")
+                try: await page.close()
+                except: pass
+                page = await context.new_page()
+                await console.step3_enable_api(page, project_id, authuser)
         await page.wait_for_timeout(2000)
         await console._shot(page, "📸 خطوة 4: تفعيل API")
 
@@ -112,11 +117,16 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
-            err_str = str(e)
-            if "image_field_empty" in err_str:
-                return await handle_error("image_field_empty")
+            if "crashed" in str(e).lower():
+                log.warning("⚠️ الصفحة طاحت فـ Cloud Run، إعادة المحاولة...")
+                try: await page.close()
+                except: pass
+                page = await context.new_page()
+                run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
+                await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
+                await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
             else:
-                return await handle_error("step4_failed", err_str)
+                return await handle_error("step4_failed", str(e))
         await console._shot(page, "📸 خطوة 5: إنشاء الخدمة")
 
         # 6

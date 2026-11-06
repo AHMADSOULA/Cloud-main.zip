@@ -18,7 +18,6 @@ class StealthBrowser:
     async def start(self):
         self.playwright = await async_playwright().start()
         
-        # ✅ نستعملو مجلد عشوائي مؤقت فكل مرة باش نتجنبو تعارض الكوكيز
         self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
         log.info(f"📁 Using fresh profile: {self.profile_dir}")
 
@@ -26,7 +25,7 @@ class StealthBrowser:
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage",
+            "--disable-dev-shm-usage", # ✅ مهم جدا باش ما يطيحش المتصفح
             "--disable-gpu",
             "--disable-software-rasterizer",
             "--disable-accelerated-2d-canvas",
@@ -46,13 +45,15 @@ class StealthBrowser:
             "--metrics-recording-only",
             "--safebrowsing-disable-auto-update",
             "--renderer-process-limit=1",
-            "--js-flags=--max-old-space-size=256",
+            "--js-flags=--max-old-space-size=512", # ✅ زيادة الذاكرة شوية
             "--window-size=1280,720",
             f"--user-agent={config.USER_AGENT}",
         ]
 
+        # ✅ استعملنا channel: 'chromium' باش نتفاداو مشكل headless-shell
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
+            channel="chromium",
             headless=config.HEADLESS,
             args=args,
             viewport={"width": 1280, "height": 720},
@@ -83,11 +84,9 @@ class StealthBrowser:
             except Exception:
                 pass
         
-        # ✅ نمسحو المجلد المؤقت ملي نسدو باش نضمنو جلسة نظيفة المرة الجاية
         if self.profile_dir and os.path.exists(self.profile_dir):
             try:
                 shutil.rmtree(self.profile_dir, ignore_errors=True)
-                log.info("🗑️ تم حذف مجلد البروفايل المؤقت")
             except Exception:
                 pass
                 

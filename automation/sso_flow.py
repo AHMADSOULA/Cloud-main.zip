@@ -57,44 +57,35 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         
         async def handle_error(err_code, extra_msg=""):
             if page:
-                await console._shot(page, "")
+                await console._shot(page, "") # صورة الخطأ
             return {"success": False, "error": err_code, "message": extra_msg}
 
-        # 1
+        # 1-5 بلا تصوير
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
 
         await page.wait_for_timeout(2000)
-        await console._shot(page, "") # صورة 1
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
-        # 2
         try: await console.step1_welcome_screen(page)
         except: pass
         await page.wait_for_timeout(1000)
-        await console._shot(page, "") # صورة 2
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
-        # 3
         try: await console.step2_terms_dialog(page)
         except: pass
         await page.wait_for_timeout(1000)
-        await console._shot(page, "") # صورة 3
 
-        # 4
         authuser = extract_authuser(page.url)
-        await console._shot(page, "") # صورة 4
 
-        # 5
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
-        await console._shot(page, "") # صورة 5
 
-        # 6
+        # 6: التصوير كيبدا هنا
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
@@ -103,10 +94,12 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 return await handle_error("service_already_exists")
             elif "invalid_docker_image" in err_str:
                 return await handle_error("invalid_docker_image")
+            elif "image_field_empty" in err_str:
+                return await handle_error("image_field_empty")
             else:
                 return await handle_error("step4_failed", err_str)
 
-        # 7
+        # 7-8
         try:
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)

@@ -12,7 +12,8 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        if not self.sender or not self.context: 
+        """تصوير الشاشة وإرسالها (تم إصلاحها)"""
+        if not self.sender: 
             return
         try:
             if not page or page.is_closed(): return
@@ -20,12 +21,15 @@ class CloudConsole:
             await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=5000) 
             with open(path, "rb") as f:
                 try:
-                    await self.context.bot.send_photo(
+                    # ✅ استعملنا get_bot() باش نجيبو البوت الصحيح
+                    bot = self.sender.get_bot()
+                    await bot.send_photo(
                         chat_id=self.sender.chat_id, 
                         photo=f, 
                         caption=caption[:1000] if caption else ""
                     )
-                except: pass
+                except Exception as e:
+                    log.warning(f"⚠️ فشل إرسال الصورة: {e}")
             try: os.remove(path)
             except: pass
         except Exception as e:
@@ -70,7 +74,6 @@ class CloudConsole:
         log.info("🚀 step3: Enable API")
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
         
-        # ✅ حل مشكل ERR_ABORTED
         for attempt in range(3):
             try:
                 await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
@@ -91,7 +94,8 @@ class CloudConsole:
             if await enable_btn.is_visible():
                 await enable_btn.click()
                 try:
-                    await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
+                    # ✅ نقصنا الوقت من 60 لـ 15 ثانية باش ما يطولش
+                    await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=15000)
                 except: pass
         except Exception as e:
             log.warning(f"⚠️ step3: {e}")
@@ -100,7 +104,6 @@ class CloudConsole:
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         
-        # ✅ حل مشكل ERR_ABORTED
         for attempt in range(3):
             try:
                 await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)

@@ -62,7 +62,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             if status_msg:
                 try: await status_msg.delete()
                 except: pass
-            # التصوير كيوقع هنا فحالة الخطأ
             if page and not page.is_closed():
                 await console._shot(page, "📸 تفاصيل الخطأ:")
             return {"success": False, "error": err_code, "message": extra_msg}

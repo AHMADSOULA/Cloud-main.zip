@@ -63,7 +63,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 try: await status_msg.delete()
                 except: pass
             if page and not page.is_closed():
-                await console._shot(page, "") # صورة بدون كابسيون، والرسالة كتجي من handlers
+                await console._shot(page, "📸 تفاصيل الخطأ:")
             return {"success": False, "error": err_code, "message": extra_msg}
 
         # 1
@@ -111,7 +111,9 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
             err_str = str(e)
-            if "Target page, context or browser has been closed" in err_str:
+            if "service_already_exists" in err_str:
+                return await handle_error("service_already_exists", "❌ يوجد خدمة تعمل بنفس الاسم.")
+            elif "Target page, context or browser has been closed" in err_str:
                 return await handle_error("browser_crashed", "❌ المتصفح طاح.")
             else:
                 return await handle_error("step4_failed", err_str)
@@ -144,7 +146,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             try: await status_msg.delete()
             except: pass
         if page and not page.is_closed():
-            try: await console._shot(page, "")
+            try: await console._shot(page, "📸 تفاصيل الخطأ:")
             except: pass
         return {"success": False, "error": "unexpected_error", "message": str(e)}
     finally:

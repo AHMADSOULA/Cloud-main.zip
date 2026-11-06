@@ -21,8 +21,7 @@ def extract_authuser(page_url: str) -> str:
     try:
         qs = parse_qs(urlparse(page_url).query)
         return qs.get('authuser', ['1'])[0]
-    except Exception:
-        return '1'
+    except: return '1'
 
 def _has_password(url: str) -> bool:
     return "password=" in (url or "").lower()
@@ -136,7 +135,13 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
-            return await handle_error("step5_failed", str(e)[:200])
+            err_str = str(e)
+            if "deployment_failed" in err_str:
+                return await handle_error("deployment_failed")
+            elif "timeout_waiting_for_url" in err_str:
+                return await handle_error("timeout_waiting_for_url")
+            else:
+                return await handle_error("step5_failed", err_str[:200])
 
         if status_msg: await status_msg.delete()
         return {"success": True, "project_id": project_id, "authuser": authuser, "final_url": final_url, "domain": domain, "region": region, "flag": flag}

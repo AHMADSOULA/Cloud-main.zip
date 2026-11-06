@@ -1,6 +1,5 @@
 import aiosqlite
 import os
-import datetime
 from config import config
 
 os.makedirs(os.path.dirname(config.DB_PATH) or ".", exist_ok=True)
@@ -21,7 +20,7 @@ async def init_db():
             )
         """)
 
-        # users
+        # users (فيه access + banned + priority + expire)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -45,7 +44,7 @@ async def init_db():
             )
         """)
 
-        # requests
+        # requests (طلبات استخدام)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS requests (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,17 +54,6 @@ async def init_db():
                 status TEXT DEFAULT 'pending'
             )
         """)
-
-        # settings (global state)
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        await db.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES ('bot_global_stop', '0')"
-        )
 
         await db.commit()
 
@@ -115,6 +103,7 @@ async def count_jobs():
 
 async def register_user(user_id: int, username: str):
     async with aiosqlite.connect(config.DB_PATH) as db:
+        # إذا الأدمن → access=1
         access = 1 if user_id == config.ADMIN_ID else 0
         priority = 100 if user_id == config.ADMIN_ID else 0
 
@@ -151,8 +140,10 @@ async def has_access(user_id: int) -> bool:
         return False
     if not user.get("access"):
         return False
+    # تحقق من الصلاحية الزمنية
     exp = user.get("expire_at")
     if exp:
+        import datetime
         try:
             exp_dt = datetime.datetime.fromisoformat(exp)
             if datetime.datetime.utcnow() > exp_dt:
@@ -195,6 +186,7 @@ async def set_priority(user_id: int, priority: int):
 
 
 async def get_active_users():
+    """المستخدمين اللي عندهم access"""
     async with aiosqlite.connect(config.DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cur = await db.execute("SELECT * FROM users WHERE access=1 AND banned=0")
@@ -280,46 +272,3 @@ async def clear_session(user_id: int):
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
         await db.commit()
-
-
-# ═══════════════════════════════════════════
-# SETTINGS (Global State)
-# ═══════════════════════════════════════════
-
-async def init_global_state():
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        await db.execute(
-            "INSERT OR IGNORE INTO settings (key, value) VALUES ('bot_global_stop', '0')"
-        )
-        await db.commit()
-
-
-async def get_setting(key: str, default: str = None):
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        cur = await db.execute("SELECT value FROM settings WHERE key=?", (key,))
-        row = await cur.fetchone()
-        return row[0] if row else default
-
-
-async def set_setting(key: str, value: str):
-    async with aiosqlite.connect(config.DB_PATH) as db:
-        await db.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-            (key, value)
-        )
-        await db.commit()
-
-
-async def is_globally_stopped() -> bool:
-    val = await get_setting("bot_global_stop", "0")
-    return val == "1"
-
-
-async def set_global_stop(stop: bool):
-    await set_setting("bot_global_stop", "1" if stop else "0")

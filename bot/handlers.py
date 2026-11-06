@@ -132,10 +132,11 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
+            # ✅ هنا كنعرضو الرسائل تحت الصورة
             if err_code == "service_already_exists":
-                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد."
+                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
             elif err_code == "account_deleted":
-                error_msg = "❌ حساب Google محذوف (Account deleted).\nيرجى إرسال رابط SSO جديد."
+                error_msg = "❌ الحساب محذوف (Account Deleted).\nيرجى إرسال رابط SSO جديد."
             elif err_code == "invalid_docker_image": 
                 error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
             elif err_code == "image_field_empty": 

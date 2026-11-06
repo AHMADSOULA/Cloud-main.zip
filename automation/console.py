@@ -12,7 +12,6 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        """تصوير الشاشة (كيتبعت فقط عند الخطأ)"""
         if not self.sender or not self.context: 
             return
         try:
@@ -44,7 +43,6 @@ class CloudConsole:
                 if await button.is_visible(timeout=3000):
                     await button.click()
             except: pass
-            await page.wait_for_load_state("networkidle")
         except Exception as e:
             log.warning(f"⚠️ step1: {e}")
 
@@ -55,43 +53,68 @@ class CloudConsole:
             await agree_btn.wait_for(state="visible", timeout=10000)
             checkboxes = page.get_by_role("checkbox")
             try:
-                await checkboxes.nth(0).click()
-                await asyncio.sleep(1)
-                await checkboxes.nth(1).click()
+                cnt = await checkboxes.count()
+                if cnt >= 2:
+                    await checkboxes.nth(0).click()
+                    await asyncio.sleep(1)
+                    await checkboxes.nth(1).click()
+                elif cnt == 1:
+                    await checkboxes.nth(0).click()
             except: pass
             await agree_btn.click()
-            await page.wait_for_load_state("domcontentloaded")
+            await page.wait_for_timeout(2000)
         except Exception as e:
             log.warning(f"⚠️ Terms Dialog: {e}")
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
-        await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
         
+        # ✅ حل مشكل ERR_ABORTED
+        for attempt in range(3):
+            try:
+                await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
+                break
+            except Exception as e:
+                if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
+                    log.warning(f"⚠️ ERR_ABORTED فـ API، إعادة المحاولة {attempt+1}...")
+                    await page.wait_for_timeout(2000)
+                else:
+                    raise e
+
         enable_btn = page.get_by_role("button", name="Enable")
         manage_btn = page.get_by_role("button", name="Manage")
-        disable_btn = page.get_by_text("Disable API") 
+        disable_btn = page.get_by_text("Disable API")
 
         try:
             await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=15000)
             if await enable_btn.is_visible():
                 await enable_btn.click()
-                await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
-            elif await manage_btn.is_visible():
-                pass 
+                try:
+                    await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
+                except: pass
         except Exception as e:
             log.warning(f"⚠️ step3: {e}")
 
-    async def step4_create_cloud_run(self, page, project_id, authuser, image, region="europe-west1"):
+    async def step4_create_cloud_run(self, page, project_id, authuser, image, region="us-central1"):
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         
-        await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(5000) # ✅ الانتظار اللي كان فـ GC.py
+        # ✅ حل مشكل ERR_ABORTED
+        for attempt in range(3):
+            try:
+                await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
+                break
+            except Exception as e:
+                if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
+                    log.warning(f"⚠️ ERR_ABORTED فـ Cloud Run، إعادة المحاولة {attempt+1}...")
+                    await page.wait_for_timeout(3000)
+                else:
+                    raise e
+
+        await page.wait_for_timeout(5000)
 
         try:
-            # ✅ الطريقة الناجحة من GC.py
             label = page.get_by_text("Container Image URL").first
             await label.click(timeout=10000)
             await page.wait_for_timeout(500)
@@ -103,10 +126,11 @@ class CloudConsole:
         await page.wait_for_timeout(3000)
 
         try:
-            await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
-            await page.get_by_role("radio", name="Instance-based").click(timeout=5000)
-            try:
-                await page.get_by_role("button", name="Hide").click(timeout=2000)
+            try: await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
+            except: pass
+            try: await page.get_by_role("radio", name="Instance-based").click(timeout=5000)
+            except: pass
+            try: await page.get_by_role("button", name="Hide").click(timeout=2000)
             except: pass
             
             await page.keyboard.press("End")
@@ -117,22 +141,6 @@ class CloudConsole:
         except Exception as e:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
-
-        # ✅ فحص سريع للخطأ (زيادة أمان)
-        for _ in range(8):
-            await page.wait_for_timeout(500)
-            error_text = await page.evaluate("""
-                () => {
-                    const body = document.body.innerText.toLowerCase();
-                    if (body.includes('already exists') || body.includes('service with this name')) return 'service_already_exists';
-                    if (body.includes('make sure all fields are correct') || body.includes('container image url is required')) return 'invalid_docker_image';
-                    return null;
-                }
-            """)
-            if error_text: raise RuntimeError(error_text)
-            if "run/create" not in page.url: return 
-
-        raise RuntimeError("invalid_docker_image")
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")

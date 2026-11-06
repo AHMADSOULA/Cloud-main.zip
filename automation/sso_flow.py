@@ -57,7 +57,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         
         async def handle_error(err_code, extra_msg=""):
             if page:
-                await console._shot(page, "") # صورة نظيفة عند الخطأ
+                await console._shot(page, "")
             return {"success": False, "error": err_code, "message": extra_msg}
 
         # 1
@@ -85,13 +85,14 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         await page.wait_for_timeout(1000)
         await console._shot(page, "") # صورة 3
 
-        # 4 - نتجاوزو الداشبورد ونمشيو ديراكت للـ API باش نسرعو
+        # 4
         authuser = extract_authuser(page.url)
-        
+        await console._shot(page, "") # صورة 4
+
         # 5
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
-        await console._shot(page, "") # صورة 4
+        await console._shot(page, "") # صورة 5
 
         # 6
         try:
@@ -104,7 +105,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 return await handle_error("invalid_docker_image")
             else:
                 return await handle_error("step4_failed", err_str)
-        await console._shot(page, "") # صورة 5 (قبل ما يكليكي على Create)
 
         # 7
         try:
@@ -121,7 +121,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             else:
                 return await handle_error("step5_failed", err_str)
 
-        await console._shot(page, "") # صورة 6 (النجاح)
         return {"success": True, "project_id": project_id, "authuser": authuser, "final_url": final_url, "domain": domain, "region": region, "flag": flag}
 
     except Exception as e:

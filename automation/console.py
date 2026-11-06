@@ -12,12 +12,15 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        """تصوير الشاشة بسرعة (jpeg خفيف بدل png ثقيل)"""
+        """تصوير الشاشة بسرعة (jpeg خفيف) مع حماية كاملة"""
         if not self.sender or not self.context: 
             return
         try:
+            if not page or page.is_closed():
+                log.warning("⚠️ الصفحة مغلقة، لا يمكن تصويرها.")
+                return
             path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
-            # ✅ full_page=False باش يكون سريع، و jpeg باش يكون خفيف
+            # ✅ صورة سريعة وخفيفة
             await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=5000) 
             with open(path, "rb") as f:
                 try:
@@ -27,11 +30,11 @@ class CloudConsole:
                         caption=caption[:1000] if caption else ""
                     )
                 except Exception as e:
-                    log.warning(f"⚠️ send_photo: {e}")
+                    log.warning(f"⚠️ فشل إرسال الصورة: {e}")
             try: os.remove(path)
             except: pass
         except Exception as e:
-            log.warning(f"⚠️ _shot: {e}")
+            log.warning(f"⚠️ فشل التصوير: {e}")
 
     async def step1_welcome_screen(self, page):
         log.info("🚀 step1: Welcome / TOS")
@@ -101,8 +104,7 @@ class CloudConsole:
             await page.wait_for_timeout(500)
             await page.keyboard.press("Control+A")
             await page.keyboard.press("Backspace")
-            # ✅ كنكتبو بسرعة (delay=10)
-            await page.keyboard.type(image, delay=10)
+            await page.keyboard.type(image, delay=10) # كتابة سريعة
         except Exception as e:
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
@@ -129,10 +131,9 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ فحص سريع جدا (كل نص ثانية) باش نمسكو الخطأ فورا
+        # ✅ فحص سريع جدا للخطأ بعد Create
         for _ in range(10): 
             await page.wait_for_timeout(500)
-            
             error_text = await page.evaluate("""
                 () => {
                     const body = document.body.innerText.toLowerCase();
@@ -143,7 +144,6 @@ class CloudConsole:
             """)
             
             if error_text:
-                log.error(f"❌ خطأ سريع: {error_text}")
                 raise RuntimeError(error_text)
             
             if "run/create" not in page.url:
@@ -161,13 +161,12 @@ class CloudConsole:
                     () => {
                         const body = document.body.innerText.toLowerCase();
                         if (body.includes('service with this name already exists') || body.includes('already exists')) return 'service_already_exists';
-                        if (body.includes('deployment failed') || body.includes('revision is not ready') || body.includes('container failed to start')) return 'deployment_failed';
+                        if (body.includes('deployment failed') || body.includes('revision is not ready')) return 'deployment_failed';
                         return null;
                     }
                 """)
                 
                 if error_text:
-                    log.error(f"❌ خطأ أثناء الانتظار: {error_text}")
                     raise RuntimeError(error_text)
 
                 url = await page.evaluate("""
@@ -181,7 +180,7 @@ class CloudConsole:
                     }
                 """)
                 if url: 
-                    await self._shot(page, "✅ خطوة 7: تم النشر بنجاح! تم العثور على الرابط.")
+                    await self._shot(page, "✅ خطوة 7: تم النشر بنجاح!")
                     return url
             except Exception as e:
                 if "service_already_exists" in str(e) or "deployment_failed" in str(e):
@@ -191,7 +190,6 @@ class CloudConsole:
             if (i + 1) % 10 == 0:
                 try: 
                     await page.reload(wait_until="domcontentloaded", timeout=30000)
-                    await self._shot(page, "⏳ خطوة 7: جاري التحديث وانتظار الرابط...")
                 except: pass
 
         raise RuntimeError("timeout_waiting_for_url")

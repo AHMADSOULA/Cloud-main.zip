@@ -74,6 +74,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg:
             try: await status_msg.delete()
             except: pass
+        # كيصيفط الصورة النظيفة
         await console._shot(page, "")
         return {"success": False, "error": err_code, "message": extra_msg}
 
@@ -84,7 +85,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
 
         await page.wait_for_timeout(3000)
-        # ✅ صورة 1
         await console._shot(page, "📸 خطوة 1: تم فتح رابط SSO")
         
         blocked = await _is_blocked(page)
@@ -94,7 +94,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         try: await console.step1_welcome_screen(page)
         except: pass
         await page.wait_for_timeout(1500)
-        # ✅ صورة 2
         await console._shot(page, "📸 خطوة 2: بعد صفحة الترحيب (TOS)")
         
         blocked = await _is_blocked(page)
@@ -104,7 +103,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         try: await console.step2_terms_dialog(page)
         except: pass
         await page.wait_for_timeout(1500)
-        # ✅ صورة 3
         await console._shot(page, "📸 خطوة 3: بعد قبول الشروط")
 
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [4/8] Dashboard")
@@ -118,7 +116,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 break
 
         if not dashboard_ok: return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم")
-        # ✅ صورة 4
         await console._shot(page, "📸 خطوة 4: لوحة التحكم (Dashboard)")
 
         authuser = extract_authuser(page.url)
@@ -126,12 +123,10 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [5/8] تفعيل API")
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
-        # ✅ صورة 5
         await console._shot(page, "📸 خطوة 5: بعد تفعيل Cloud Run API")
 
         if status_msg: await status_msg.edit_text(f"🚀 جاري التنفيذ... [6/8] إنشاء Cloud Run {flag}")
         try:
-            # (هنا فين كيصور فـ step4)
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
             err_str = str(e)
@@ -146,7 +141,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
 
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [7/8] انتظار الرابط")
         try:
-            # (هنا فين كيصور فـ step5)
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
@@ -159,7 +153,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 return await handle_error("step5_failed", err_str[:200])
 
         if status_msg: await status_msg.delete()
-        # ✅ صورة 8
         await console._shot(page, "✅ خطوة 8: تمت العملية بنجاح!")
         
         return {"success": True, "project_id": project_id, "authuser": authuser, "final_url": final_url, "domain": domain, "region": region, "flag": flag}

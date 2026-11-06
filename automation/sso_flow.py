@@ -47,7 +47,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
 
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
     
-    # رسالة وحدة كنبدلوها
     status_msg = await sender.reply_text("⏳ جاري التنفيذ... [0/6]") if sender else None
 
     async def update_status(step, text=""):
@@ -70,9 +69,8 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         await update_status(1, "فتح الرابط")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
-        
         await page.wait_for_timeout(2000)
-        await console._shot(page, "📸 خطوة 1: فتح الرابط") # ✅ تصوير
+        await console._shot(page, "📸 خطوة 1: فتح الرابط")
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
@@ -81,8 +79,15 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         await update_status(2, "قبول التوجيهات")
         try: await console.step1_welcome_screen(page)
         except: pass
-        await page.wait_for_timeout(1000)
-        await console._shot(page, "📸 خطوة 2: بعد قبول التوجيهات") # ✅ تصوير
+        
+        # ✅ هنا السر: نستناو حتى يدخل الحساب أوتوماتيكياً لـ Dashboard
+        try:
+            await page.wait_for_url("**/home/dashboard**", timeout=45000)
+        except Exception as e:
+            log.warning(f"⚠️ ما وصلناش Dashboard بـ URL، نحاولو نكملو... ({e})")
+        
+        await page.wait_for_timeout(3000)
+        await console._shot(page, "📸 خطوة 2: بعد الدخول للحساب")
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
@@ -91,15 +96,16 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         await update_status(3, "قبول الشروط")
         try: await console.step2_terms_dialog(page)
         except: pass
-        await page.wait_for_timeout(1000)
-        await console._shot(page, "📸 خطوة 3: بعد قبول الشروط") # ✅ تصوير
+        await page.wait_for_timeout(2000)
+        await console._shot(page, "📸 خطوة 3: بعد قبول الشروط")
 
         # 4
         await update_status(4, "تفعيل API")
         authuser = extract_authuser(page.url)
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
-        await console._shot(page, "📸 خطوة 4: تفعيل API") # ✅ تصوير
+        await page.wait_for_timeout(2000)
+        await console._shot(page, "📸 خطوة 4: تفعيل API")
 
         # 5
         await update_status(5, "إنشاء الخدمة")
@@ -111,7 +117,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 return await handle_error("image_field_empty")
             else:
                 return await handle_error("step4_failed", err_str)
-        await console._shot(page, "📸 خطوة 5: إنشاء الخدمة") # ✅ تصوير
+        await console._shot(page, "📸 خطوة 5: إنشاء الخدمة")
 
         # 6
         await update_status(6, "انتظار الرابط")
@@ -120,7 +126,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
             return await handle_error("timeout_waiting_for_url", str(e))
-        await console._shot(page, "📸 خطوة 6: النجاح") # ✅ تصوير
+        await console._shot(page, "📸 خطوة 6: النجاح")
 
         if status_msg:
             try: await status_msg.delete()

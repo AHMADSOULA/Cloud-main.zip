@@ -12,13 +12,13 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
+        """تصوير الشاشة (كيتبعت غير عند الخطأ)"""
         if not self.sender or not self.context: 
             return
         try:
             if not page or page.is_closed(): return
             path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
-            # صورة سريعة وخفيفة
-            await page.screenshot(path=path, full_page=False, type="jpeg", quality=50, timeout=5000) 
+            await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=5000) 
             with open(path, "rb") as f:
                 try:
                     await self.context.bot.send_photo(
@@ -91,35 +91,23 @@ class CloudConsole:
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         
-        for attempt in range(3):
-            try:
-                await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
-                break
-            except Exception as e:
-                if "crashed" in str(e).lower():
-                    log.warning(f"⚠️ الصفحة طاحت، إعادة المحاولة {attempt+1}...")
-                    await page.wait_for_timeout(2000)
-                    continue
-                else:
-                    raise RuntimeError(f"فشل فتح صفحة Cloud Run: {e}")
-
-        await page.wait_for_timeout(3000)
+        await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
+        await page.wait_for_timeout(4000)
 
         try:
-            # ✅ المحدد الدقيق لحقل الحاوية
+            # ✅ البحث المضمون 100% على حقل الحاوية
             image_input = page.locator('input[aria-label*="Container Image URL" i]').first
             await image_input.wait_for(state="visible", timeout=15000)
             await image_input.click()
             await page.wait_for_timeout(500)
             await image_input.press("Control+A")
             await image_input.press("Backspace")
-            await page.keyboard.type(image, delay=10) # كتابة سريعة
+            await page.keyboard.type(image, delay=20) # كتابة سريعة
         except Exception as e:
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
 
         await page.wait_for_timeout(2000)
-        await self._shot(page, "") # ✅ صورة 6: تم إدخال الحاوية
 
         try:
             try: await page.get_by_role("radio", name="Allow public access").click(timeout=3000)
@@ -130,7 +118,7 @@ class CloudConsole:
             except: pass
 
             await page.keyboard.press("End")
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(1000)
 
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=5000)
@@ -138,7 +126,7 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # فحص سريع للخطأ
+        # ✅ فحص سريع للخطأ بعد الضغط على Create
         for _ in range(8): 
             await page.wait_for_timeout(500)
             error_text = await page.evaluate("""
@@ -160,9 +148,8 @@ class CloudConsole:
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
-        await self._shot(page, "") # ✅ صورة 7: انتظار الرابط
         
-        for i in range(30): # 30 محاولة × 2 ثانية = 60 ثانية
+        for i in range(30): 
             try:
                 error_text = await page.evaluate("""
                     () => {
@@ -187,13 +174,12 @@ class CloudConsole:
                     }
                 """)
                 if url: 
-                    await self._shot(page, "") # ✅ صورة 8: النجاح
                     return url
             except Exception as e:
                 if "service_already_exists" in str(e) or "deployment_failed" in str(e):
                     raise
 
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(1500)
             if (i + 1) % 10 == 0:
                 try: await page.reload(wait_until="domcontentloaded", timeout=30000)
                 except: pass

@@ -12,8 +12,7 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        if not self.sender: 
-            return
+        if not self.sender: return
         try:
             if not page or page.is_closed(): return
             path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
@@ -60,7 +59,7 @@ class CloudConsole:
                     await checkboxes.nth(0).click()
             except: pass
             await agree_btn.click()
-            await page.wait_for_timeout(3000) # ✅ زيادة وقت الانتظار
+            await page.wait_for_timeout(3000)
         except Exception as e:
             log.warning(f"⚠️ Terms Dialog: {e}")
 
@@ -68,18 +67,7 @@ class CloudConsole:
         log.info("🚀 step3: Enable API")
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
         
-        for attempt in range(3):
-            try:
-                await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
-                break
-            except Exception as e:
-                if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
-                    log.warning(f"⚠️ ERR_ABORTED فـ API، إعادة المحاولة {attempt+1}...")
-                    await page.wait_for_timeout(3000)
-                else:
-                    raise e
-
-        # ✅ نستناو الصفحة تحمل مزيان
+        await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(3000) 
         
         enable_btn = page.get_by_role("button", name="Enable")
@@ -91,7 +79,7 @@ class CloudConsole:
             if await enable_btn.is_visible():
                 await enable_btn.click()
                 try:
-                    await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=20000)
+                    await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=15000)
                 except: pass
         except Exception as e:
             log.warning(f"⚠️ step3: {e}")
@@ -100,18 +88,7 @@ class CloudConsole:
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         
-        for attempt in range(3):
-            try:
-                await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
-                break
-            except Exception as e:
-                if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
-                    log.warning(f"⚠️ ERR_ABORTED فـ Cloud Run، إعادة المحاولة {attempt+1}...")
-                    await page.wait_for_timeout(3000)
-                else:
-                    raise e
-
-        # ✅ هنا كنستناو 7 ثواني باش الصفحة تفتح كاملة وتوجد الحقول
+        await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(7000) 
 
         try:
@@ -123,7 +100,7 @@ class CloudConsole:
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
 
-        await page.wait_for_timeout(4000) # ✅ نستناو شوية بعد كتابة الحاوية
+        await page.wait_for_timeout(4000) 
 
         try:
             try: await page.get_by_role("radio", name="Allow public access").click(timeout=5000)

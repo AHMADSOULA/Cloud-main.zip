@@ -303,7 +303,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
             elif err_code == "timeout_waiting_for_url":
                 error_msg = f"❌ انتهى الوقت ولم يتم النشر.\nقد يكون هناك ضغط على السيرفرات.{refund_text}"
             elif err_code == "service_already_exists":
-                # ✅ هنا التعديل: رسالة واضحة لوجود خدمة بنفس الاسم
                 error_msg = f"❌ يوجد خدمة تعمل بنفس الاسم.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
             else:
                 error_msg = f"❌ فشل النشر:\n{result.get('message')}{refund_text}"

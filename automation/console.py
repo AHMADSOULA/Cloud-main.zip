@@ -1,7 +1,3 @@
-"""
-automation/console.py
-كل خطوات Google Cloud Console — صامت (بلا تقارير، بلا تصوير)
-"""
 import asyncio
 import os
 from playwright.async_api import expect
@@ -16,11 +12,7 @@ class CloudConsole:
         self.sender = sender
         self.user_tag = user_tag or "@user"
 
-    # ═══════════════════════════════════════
-    # دالة تصوير الشاشة وإرسالها (اللي كانت ناقصة)
-    # ═══════════════════════════════════════
     async def _shot(self, page, caption: str = ""):
-        """تصوير الشاشة وإرسالها للمستخدم (بكابسيون خاوي إلا بغيتي)"""
         if not self.sender:
             return
         try:
@@ -35,39 +27,26 @@ class CloudConsole:
                         await bot.send_photo(chat_id=self.sender.chat_id, photo=f)
                 except Exception as e:
                     log.warning(f"⚠️ send_photo: {e}")
-            try:
-                os.remove(path)
-            except Exception:
-                pass
+            try: os.remove(path)
+            except Exception: pass
         except Exception as e:
             log.warning(f"⚠️ _shot: {e}")
-
-    # ═══════════════════════════════════════
-    # STEP 1: TOS الأولى
-    # ═══════════════════════════════════════
 
     async def step1_welcome_screen(self, page):
         log.info("🚀 step1: Welcome / TOS")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=10000)
             await page.wait_for_timeout(1500)
-            try:
-                await page.keyboard.press("Enter")
-            except Exception:
-                pass
+            try: await page.keyboard.press("Enter")
+            except: pass
             try:
                 button = page.locator("text='I understand'").first
                 if await button.is_visible(timeout=3000):
                     await button.click()
                     log.info("✅ I understand clicked")
-            except Exception:
-                pass
+            except: pass
         except Exception as e:
             log.warning(f"⚠️ step1: {e}")
-
-    # ═══════════════════════════════════════
-    # STEP 2: Terms Dialog
-    # ═══════════════════════════════════════
 
     async def step2_terms_dialog(self, page):
         log.info("🚀 step2: Terms Dialog")
@@ -83,16 +62,11 @@ class CloudConsole:
                     await checkboxes.nth(1).click()
                 elif cnt == 1:
                     await checkboxes.nth(0).click()
-            except Exception:
-                pass
+            except: pass
             await agree_btn.click()
             await page.wait_for_timeout(2000)
         except Exception as e:
             log.warning(f"⚠️ Terms Dialog: {e}")
-
-    # ═══════════════════════════════════════
-    # STEP 3: Enable API
-    # ═══════════════════════════════════════
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
@@ -112,16 +86,11 @@ class CloudConsole:
                 try:
                     await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
                     log.info("✅ تم تفعيل API")
-                except Exception:
-                    pass
+                except: pass
             elif await manage_btn.is_visible():
                 log.info("ℹ️ API مفعل من قبل")
         except Exception as e:
             log.warning(f"⚠️ step3: {e}")
-
-    # ═══════════════════════════════════════
-    # STEP 4: Create Cloud Run (الطريقة الناجحة)
-    # ═══════════════════════════════════════
 
     async def step4_create_cloud_run(self, page, project_id, authuser, image, region="us-central1"):
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
@@ -145,18 +114,12 @@ class CloudConsole:
         await page.wait_for_timeout(3000)
 
         try:
-            try:
-                await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
-            except Exception:
-                pass
-            try:
-                await page.get_by_role("radio", name="Instance-based").click(timeout=5000)
-            except Exception:
-                pass
-            try:
-                await page.get_by_role("button", name="Hide").click(timeout=2000)
-            except Exception:
-                pass
+            try: await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
+            except: pass
+            try: await page.get_by_role("radio", name="Instance-based").click(timeout=5000)
+            except: pass
+            try: await page.get_by_role("button", name="Hide").click(timeout=2000)
+            except: pass
 
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
@@ -169,22 +132,22 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        await page.wait_for_timeout(5000)
+        # ✅ الفحص السريع (6 ثواني كافيين باش Google تتحقق)
+        await page.wait_for_timeout(6000)
         
         try:
             body_text = (await page.locator("body").inner_text()).lower()
+            # إلا كان خطأ ديال "كاينة" أو "غير صالحة" أو بقينا فصفحة الإنشاء
             if "already exists" in body_text or "service name is already in use" in body_text:
                 log.error("❌ الخدمة كاينة بالفعل!")
                 raise RuntimeError("service_already_exists")
-            if "run/create" in page.url and "run/details" not in page.url:
-                log.error("❌ البوت مازال معلق فصفحة الإنشاء (خطأ غير معروف)")
-                raise RuntimeError("google_error")
+            
+            if "run/create" in page.url:
+                log.error("❌ البوت مازال معلق فصفحة الإنشاء (الحاوية غالطة أو حقول ناقصة)")
+                raise RuntimeError("invalid_docker_image")
+                
         except Exception:
             pass
-
-    # ═══════════════════════════════════════
-    # STEP 5: Get URL
-    # ═══════════════════════════════════════
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
@@ -200,8 +163,7 @@ class CloudConsole:
                         return null;
                     }
                 """)
-                if url:
-                    return url
+                if url: return url
 
                 url = await page.evaluate("""
                     () => {
@@ -211,10 +173,8 @@ class CloudConsole:
                         return null;
                     }
                 """)
-                if url:
-                    return url
-            except Exception:
-                pass
+                if url: return url
+            except: pass
 
             await page.wait_for_timeout(2500)
 
@@ -222,7 +182,6 @@ class CloudConsole:
                 try:
                     await page.reload(wait_until="domcontentloaded", timeout=30000)
                     await page.wait_for_timeout(2500)
-                except Exception:
-                    pass
+                except: pass
 
         raise RuntimeError("ما لقيناش رابط run.app")

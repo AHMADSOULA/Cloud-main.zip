@@ -255,6 +255,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
+        # ✅ هنا كنبداو العملية وكنمررو msg باش يقدر يبعث الصور عند الخطأ
         result = await run_sso_flow(ctx, sso_url, image=image, sender=msg, user_tag="user")
         
         if result.get("success"):

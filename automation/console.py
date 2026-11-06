@@ -12,6 +12,7 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
+        """تصوير الشاشة وإرسالها"""
         if not self.sender: return
         try:
             if not page or page.is_closed(): return
@@ -73,7 +74,6 @@ class CloudConsole:
                 break
             except Exception as e:
                 if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
-                    log.warning(f"⚠️ ERR_ABORTED فـ API، إعادة المحاولة {attempt+1}...")
                     await page.wait_for_timeout(3000)
                 else:
                     raise e
@@ -104,25 +104,23 @@ class CloudConsole:
                 break
             except Exception as e:
                 if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
-                    log.warning(f"⚠️ ERR_ABORTED فـ Cloud Run، إعادة المحاولة {attempt+1}...")
                     await page.wait_for_timeout(3000)
                 else:
                     raise e
 
-        await page.wait_for_timeout(8000) 
+        await page.wait_for_timeout(7000)
 
-        # ✅ 1. فحص الأول: واش كاين خطأ "الخدمة كاينة" قبل ما نعمرولحو الحاوية؟
-        error_check = await page.evaluate("""
+        # ✅ فحص واش كاين خطأ "الخدمة كاينة"
+        error_text = await page.evaluate("""
             () => {
                 const body = document.body.innerText.toLowerCase();
-                if (body.includes('already exists') || body.includes('service with this name')) return 'service_already_exists';
+                if (body.includes('service with this name already exists') || body.includes('already exists')) return 'service_already_exists';
                 return null;
             }
         """)
-        if error_check: 
-            raise RuntimeError("service_already_exists")
+        if error_text: raise RuntimeError(error_text)
 
-        # ✅ 2. إلا مكانش الخطأ، نعمرولحو الحاوية
+        # ✅ تعمير حقل الحاوية
         try:
             image_input = page.locator('input[aria-label*="Container Image URL" i]').first
             await image_input.wait_for(state="visible", timeout=15000)
@@ -132,19 +130,18 @@ class CloudConsole:
             await page.keyboard.press("Backspace")
             await page.keyboard.type(image, delay=50)
         except Exception as e:
-            # ✅ 3. إلا طاح فالحقل، نعاودو نشوفو واش الخطأ بان دغيا
-            error_check2 = await page.evaluate("""
+            # ✅ فحص إضافي إلا فشلنا نلقاو الحقل
+            error_text = await page.evaluate("""
                 () => {
                     const body = document.body.innerText.toLowerCase();
                     if (body.includes('already exists') || body.includes('service with this name')) return 'service_already_exists';
                     return null;
                 }
             """)
-            if error_check2:
-                raise RuntimeError("service_already_exists")
-            else:
-                log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
-                raise RuntimeError("image_field_empty")
+            if error_text: raise RuntimeError(error_text)
+            
+            log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
+            raise RuntimeError("image_field_empty")
 
         await page.wait_for_timeout(3000) 
 
@@ -165,7 +162,7 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ 4. فحص أخير بعد الضغط على Create
+        # ✅ فحص بعد ما ضغطنا على Create
         for _ in range(8): 
             await page.wait_for_timeout(500)
             error_text = await page.evaluate("""

@@ -86,63 +86,56 @@ class CloudConsole:
         await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(5000)
 
-        # 1. التأكد من اختيار وضع Container Image
+        # ✅ 1. إدخال صورة الدوكر بالطريقة الناجحة (الضغط على النص ثم الكتابة)
         try:
-            await page.get_by_role("radio", name="Deploy one revision from an existing container image").click(timeout=5000)
-        except Exception:
-            pass
-
-        # 2. تعبئة الحقل بالـ placeholder الصحيح
-        try:
-            image_input = page.locator('input[placeholder*="Container Image URL" i]').first
-            await image_input.wait_for(state="visible", timeout=15000)
-            await image_input.scroll_into_view_if_needed()
-            await image_input.click()
-            await page.keyboard.type(image, delay=50)
-            # ✅ نستناو شوية باش Service Name يتعمر تلقائياً
-            await page.wait_for_timeout(2000)
+            label = page.get_by_text("Container Image URL").first
+            await label.click(timeout=10000)
+            await page.wait_for_timeout(500)
             
-            # ✅ نتأكدو بللي الحقل تعمر
-            val = await image_input.input_value()
-            if not val:
-                raise RuntimeError("image_field_empty")
+            await page.keyboard.type(image, delay=50)
+            log.info(f"✅ Typed image: {image}")
+            
         except Exception as e:
-            log.error(f"❌ فشل تعبئة حقل الصورة: {e}")
-            # محاولة احتياطية
-            try:
-                await page.locator('input[type="text"]').filter(has_not=page.locator('[maxlength="20"]')).first.fill(image)
-            except Exception:
-                raise RuntimeError("image_field_empty")
-
-        # 3. إعدادات الوصول
+            log.error(f"❌ فشل في الضغط وكتابة الرابط: {e}")
+            raise RuntimeError(f"image_field_empty")
+        
+        await page.wait_for_timeout(3000)
+        
+        # ✅ 2. إعدادات الوصول و Create
         try:
             await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
         except Exception:
             pass
+            
         try:
             await page.get_by_role("radio", name="Instance-based").click(timeout=5000)
         except Exception:
             pass
-
-        await page.keyboard.press("End")
-        await page.wait_for_timeout(1000)
-
-        # 4. النقر على Create
+            
         try:
-            await page.get_by_role("button", name="Create").click(force=True, timeout=8000)
+            await page.get_by_role("button", name="Hide").click(timeout=2000)
         except Exception:
             pass
+                
+        await page.keyboard.press("End")
+        await page.wait_for_timeout(1000)
+        
+        try:
+            create_btn = page.get_by_role("button", name="Create")
+            await create_btn.click(force=True, timeout=8000)
+            log.info("✅ Create clicked")
+        except Exception as e:
+            log.error(f"❌ فشل في اختيار الإعدادات أو ضغط Create: {e}")
+            raise RuntimeError("step4_failed")
 
-        # 5. التحقق من أخطاء Google
+        # ✅ 3. التحقق من الأخطاء
         await page.wait_for_timeout(5000)
         
         body_text = (await page.locator("body").inner_text()).lower()
         
-        # إلا كان الاسم المكرر (هادي كتطلع كلمة already exists)
         if "already exists" in body_text or "service name is already in use" in body_text:
             raise RuntimeError("service_already_exists")
-        
-        # إلا بقا فصفحة الإنشاء معناها كاين مشكل فحقل آخر
+            
         if "run/create" in page.url and "run/details" not in page.url:
             raise RuntimeError("google_error")
 

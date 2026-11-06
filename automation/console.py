@@ -3,6 +3,7 @@ automation/console.py
 كل خطوات Google Cloud Console — صامت (بلا تقارير، بلا تصوير)
 """
 import asyncio
+import os
 from playwright.async_api import expect
 from utils.logger import get_logger
 
@@ -16,6 +17,32 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     # ═══════════════════════════════════════
+    # دالة تصوير الشاشة وإرسالها (اللي كانت ناقصة)
+    # ═══════════════════════════════════════
+    async def _shot(self, page, caption: str = ""):
+        """تصوير الشاشة وإرسالها للمستخدم (بكابسيون خاوي إلا بغيتي)"""
+        if not self.sender:
+            return
+        try:
+            path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.png"
+            await page.screenshot(path=path, full_page=False, timeout=8000)
+            with open(path, "rb") as f:
+                try:
+                    bot = self.sender.get_bot()
+                    if caption:
+                        await bot.send_photo(chat_id=self.sender.chat_id, photo=f, caption=caption[:1000])
+                    else:
+                        await bot.send_photo(chat_id=self.sender.chat_id, photo=f)
+                except Exception as e:
+                    log.warning(f"⚠️ send_photo: {e}")
+            try:
+                os.remove(path)
+            except Exception:
+                pass
+        except Exception as e:
+            log.warning(f"⚠️ _shot: {e}")
+
+    # ═══════════════════════════════════════
     # STEP 1: TOS الأولى
     # ═══════════════════════════════════════
 
@@ -24,14 +51,10 @@ class CloudConsole:
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=10000)
             await page.wait_for_timeout(1500)
-
-            # محاولة الضغط على Enter
             try:
                 await page.keyboard.press("Enter")
             except Exception:
                 pass
-
-            # الضغط على زر I understand
             try:
                 button = page.locator("text='I understand'").first
                 if await button.is_visible(timeout=3000):
@@ -49,7 +72,6 @@ class CloudConsole:
     async def step2_terms_dialog(self, page):
         log.info("🚀 step2: Terms Dialog")
         agree_btn = page.get_by_role("button", name="Agree and continue")
-
         try:
             await agree_btn.wait_for(state="visible", timeout=8000)
             checkboxes = page.get_by_role("checkbox")
@@ -63,7 +85,6 @@ class CloudConsole:
                     await checkboxes.nth(0).click()
             except Exception:
                 pass
-
             await agree_btn.click()
             await page.wait_for_timeout(2000)
         except Exception as e:
@@ -107,19 +128,15 @@ class CloudConsole:
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         
         await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(6000) # نستناو الصفحة تحمل مزيان
+        await page.wait_for_timeout(6000)
 
-        # ✅ الطريقة الناجحة: نضغطو على النص ديال "Container Image URL" ثم نكتبو
         try:
             label = page.get_by_text("Container Image URL").first
             await label.click(timeout=10000)
             await page.wait_for_timeout(500)
-            
-            # نمسحو أي حاجة فالبلاصة ثم نكتبو
             await page.keyboard.press("Control+A")
             await page.keyboard.press("Backspace")
             await page.keyboard.type(image, delay=50)
-            
             log.info(f"✅ تم كتابة صورة الدوكر: {image}")
         except Exception as e:
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
@@ -127,7 +144,6 @@ class CloudConsole:
 
         await page.wait_for_timeout(3000)
 
-        # ✅ الإعدادات والضغط على Create
         try:
             try:
                 await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
@@ -153,16 +169,13 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ التحقق من الأخطاء (الخدمة كاينة أو خطأ آخر)
         await page.wait_for_timeout(5000)
         
         try:
             body_text = (await page.locator("body").inner_text()).lower()
-            
             if "already exists" in body_text or "service name is already in use" in body_text:
                 log.error("❌ الخدمة كاينة بالفعل!")
                 raise RuntimeError("service_already_exists")
-                
             if "run/create" in page.url and "run/details" not in page.url:
                 log.error("❌ البوت مازال معلق فصفحة الإنشاء (خطأ غير معروف)")
                 raise RuntimeError("google_error")

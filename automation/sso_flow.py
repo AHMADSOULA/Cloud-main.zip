@@ -74,7 +74,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg:
             try: await status_msg.delete()
             except: pass
-        # كيصيفط الصورة النظيفة
         await console._shot(page, "")
         return {"success": False, "error": err_code, "message": extra_msg}
 
@@ -145,7 +144,9 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
             err_str = str(e)
-            if "deployment_failed" in err_str:
+            if "service_already_exists" in err_str:
+                return await handle_error("service_already_exists")
+            elif "deployment_failed" in err_str:
                 return await handle_error("deployment_failed")
             elif "timeout_waiting_for_url" in err_str:
                 return await handle_error("timeout_waiting_for_url")

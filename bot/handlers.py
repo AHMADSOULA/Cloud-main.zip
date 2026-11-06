@@ -1,6 +1,5 @@
 import asyncio
 import io
-import os
 import base64
 import json
 import datetime
@@ -9,7 +8,7 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 from bot import messages
-from bot.keyboards import main_menu, admin_menu, ssh_countries_menu
+from bot.keyboards import main_menu, admin_menu
 from database import db
 from utils.helpers import extract_urls
 from utils.logger import get_logger
@@ -26,7 +25,7 @@ log = get_logger("Handlers")
 
 class JobQueue:
     def __init__(self):
-        self.queue = []
+        self.queue = []   # [{num, user_id, chat_id, sso_url, user_tag, priority}]
         self.counter = 0
         self.current = None
         self.lock = asyncio.Lock()
@@ -43,6 +42,7 @@ class JobQueue:
                 "user_tag": user_tag,
                 "priority": priority,
             })
+            # ✅ نرتبو حسب priority (الأعلى أولاً)
             self.queue.sort(key=lambda x: -x["priority"])
             return num
 
@@ -52,6 +52,7 @@ class JobQueue:
                 return None
             if not self.queue:
                 return None
+            # الأعلى priority
             self.current = self.queue.pop(0)
             return self.current
 
@@ -73,7 +74,7 @@ queue = JobQueue()
 
 
 # ═══════════════════════════════════════════
-# 3 ملفات DarkTunnel (Cloud Run)
+# 3 ملفات DarkTunnel
 # ═══════════════════════════════════════════
 
 DARK_FILES = [
@@ -87,16 +88,9 @@ DARK_FILES = [
     },
     {
         "name": "FREE_4H",
-        "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiRlJFRV80SF_wn4e68J-HuCIsInZsZXNzVHVubmVsQ29uZmlnIjp7InYycmF5Q29uZmlnIjp7Imhvc3QiOiJhbHQxMy55dDMuZ2dwaHQuY29tIiwicG9ydCI6NDQzLCJ1dWlkIjoiYWFhYTExMTEtYmJiYi00Y2NjLThkZGQtZWVlZWZmZmYwMDAwIiwic2VydmVyTmFtZUluZGljYXRpb24iOiJhbHQxMy55dDMuZ2dwaHQuY29tIiwid3NQYXRoIjoiL1RlbGVncmFtL0BBTTJfRDMvQEFITUFEMzIxNCJ9LCJpbmplY3RDb25maWciOnsiZW5hYmxlZCI6dHJ1ZSwibW9kZSI6IlBST1hZIiwicHJveHlIb3N0IjoiMTU3LjI0MC45LjM5IiwicGF5bG9hZCI6IkNPTk5FQ1QgW2hvc3RdOltwb3J0XSBIVFRQLzEuMVtjcmxmXXgtY29ubmVjdGVkLXRvOiAzNC4xNDMuNzIuMltjcmxmXXByb3h5LWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl1jb25uZWN0aW9uOiBrZWVwLWFsaXZlW2Nyb2ZdeC1pb3JnLWJzaWQ6IEBBTTJfRDNbY3JsZl1bY3JsZl0ifX19",
+        "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiRlJFRV80SF_wn4e68J-HuCIsInZsZXNzVHVubmVsQ29uZmlnIjp7InYycmF5Q29uZmlnIjp7Imhvc3QiOiJhbHQxMy55dDMuZ2dwaHQuY29tIiwicG9ydCI6NDQzLCJ1dWlkIjoiYWFhYTExMTEtYmJiYi00Y2NjLThkZGQtZWVlZWZmZmYwMDAwIiwic2VydmVyTmFtZUluZGljYXRpb24iOiJhbHQxMy55dDMuZ2dwaHQuY29tIiwid3NQYXRoIjoiL1RlbGVncmFtL0BBTTJfRDMvQEFITUFEMzIxNCJ9LCJpbmplY3RDb25maWciOnsiZW5hYmxlZCI6dHJ1ZSwibW9kZSI6IlBST1hZIiwicHJveHlIb3N0IjoiMTU3LjI0MC45LjM5IiwicGF5bG9hZCI6IkNPTk5FQ1QgW2hvc3RdOltwb3J0XSBIVFRQLzEuMVtjcmxmXXgtY29ubmVjdGVkLXRvOiAzNC4xNDMuNzIuMltjcmxmXXByb3h5LWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl1jb25uZWN0aW9uOiBrZWVwLWFsaXZlW2NybGZddXNlci1hZ2VudDogRkJBVi8wLjAgW2NybGZdeC1pb3JnLWJzaWQ6IEBBTTJfRDNbY3JsZl1bY3JsZl0ifX19",
     },
 ]
-
-
-# ═══════════════════════════════════════════
-# SSH DarkTunnel
-# ═══════════════════════════════════════════
-
-SSH_TEMPLATE_PLAIN = "darktunnel://eyJ0eXBlIjoiU1NIIiwibmFtZSI6IlNTSCIsInNzaFR1bm5lbENvbmZpZyI6eyJzc2hDb25maWciOnsiaG9zdCI6IjE2MC4xMTkuMjUxLjE1IiwidXNlcm5hbWUiOiJ1NTU2NjI3MTg5OCIsInBhc3N3b3JkIjoiQWhtZWQyMDI1In0sImluamVjdENvbmZpZyI6eyJtb2RlIjoiUFJPWFkiLCJwcm94eUhvc3QiOiIzNC40My40Ni45MSIsInByb3h5UG9ydCI6NDQzLCJwYXlsb2FkIjoiQ09OTkVDVCBbaG9zdF9wb3J0XSBbcHJvdG9jb2xdW2NybGZdSG9zdDogeW91dHViZS5jb21bY3JsZl1bY3JsZl0ifX19"
 
 
 def _b64_pad(s: str) -> str:
@@ -131,34 +125,6 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
         return None
 
 
-def build_ssh_dark_with_creds(host: str, username: str, password: str) -> str:
-    try:
-        outer = {
-            "type": "SSH",
-            "name": "SSH",
-            "sshTunnelConfig": {
-                "sshConfig": {
-                    "host": host or "",
-                    "port": 22,
-                    "username": username or "",
-                    "password": password or ""
-                },
-                "injectConfig": {
-                    "mode": "PROXY",
-                    "proxyHost": "34.43.46.91",
-                    "proxyPort": 443,
-                    "payload": "CONNECT [host_port] [protocol][crlf]Host: youtube.com[crlf][crlf]"
-                }
-            }
-        }
-        outer_json = json.dumps(outer, ensure_ascii=False, separators=(",", ":"))
-        outer_b64 = base64.b64encode(outer_json.encode("utf-8")).decode("utf-8")
-        return "darktunnel://" + outer_b64
-    except Exception as e:
-        log.error(f"❌ build_ssh_dark: {e}", exc_info=True)
-        return None
-
-
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
@@ -171,6 +137,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.register_user(user.id, user.username or user.first_name)
 
+    # ✅ الأدمن
     if is_admin(user.id):
         await update.message.reply_text(
             messages.WELCOME_ADMIN,
@@ -180,17 +147,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if await db.is_globally_stopped():
-        await update.message.reply_text(
-            "⛔ *البوت متوقف حالياً*\n\nرايح يرجع يخدم قريباً. جرب من بعد.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
+    # ✅ محظور
     if await db.is_banned(user.id):
         await update.message.reply_text("🚫 أنت محظور من البوت.")
         return
 
+    # ✅ عندو صلاحية
     if await db.has_access(user.id):
         await update.message.reply_text(
             messages.WELCOME_USER,
@@ -200,13 +162,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # ✅ بلا صلاحية → نطلبو
     await update.message.reply_text(
         messages.WELCOME_PENDING,
         parse_mode=ParseMode.MARKDOWN,
         disable_web_page_preview=True,
     )
     await update.message.reply_text(
-        "🔒 *للحصول على صلاحية:*\n\nأرسل `/request` باش نرسلو طلبك للـ ADMIN.",
+        "🔒 *للحصول على صلاحية:*\n\n"
+        "أرسل `/request` باش نرسلو طلبك للـ ADMIN.",
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -229,6 +193,7 @@ async def request_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.add_request(user.id, user.username or user.first_name)
     await update.message.reply_text("✅ تم إرسال طلبك للـ ADMIN. رايح نراجعوه قريباً.")
 
+    # ✅ نبعثو للأدمن
     try:
         await context.bot.send_message(
             chat_id=config.ADMIN_ID,
@@ -271,20 +236,6 @@ async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.clear_session(user.id)
-
-    ssh = context.user_data.pop("ssh_obj", None)
-    if ssh:
-        try:
-            await ssh.close()
-        except Exception:
-            pass
-    browser = context.user_data.pop("ssh_browser", None)
-    if browser:
-        try:
-            await browser.close()
-        except Exception:
-            pass
-
     b = context.bot_data.pop(f"browser_{user.id}", None)
     if b:
         try:
@@ -319,13 +270,7 @@ def is_direct_addsession_url(url: str) -> bool:
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    if await db.is_globally_stopped() and not is_admin(user.id):
-        await update.message.reply_text(
-            "⛔ *البوت متوقف حالياً*\n\nجرب من بعد.",
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
+    # ❌ بلا صلاحية
     if not await db.has_access(user.id):
         await update.message.reply_text(
             "🔒 ما عندكش صلاحية.\nأرسل `/request` باش تطلب.",
@@ -347,6 +292,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_tag = f"@{user.username}" if user.username else f"@{user.first_name}"
     log.info(f"🔗 URL: {sso_url[:150]}")
 
+    # ✅ priority
     u = await db.get_user(user.id)
     priority = (u.get("priority") or 0) if u else 0
 
@@ -354,7 +300,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         num = await queue.add(user.id, update.effective_chat.id, sso_url, user_tag, priority)
         pos = queue.position(user.id)
         if pos > 1:
-            await update.message.reply_text(f"📥 تم استلام الرابط رقم {num}.\n📍 موقعك في الطابور: {pos}")
+            await update.message.reply_text(
+                f"📥 تم استلام الرابط رقم {num}.\n"
+                f"📍 موقعك في الطابور: {pos}"
+            )
         else:
             await update.message.reply_text(f"📥 تم استلام الرابط رقم {num}.")
         asyncio.create_task(process_queue(update.effective_chat.id, context))
@@ -376,7 +325,10 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     num = await queue.add(user.id, update.effective_chat.id, sso_url, user_tag, priority)
     pos = queue.position(user.id)
     if pos > 1:
-        await update.message.reply_text(f"📥 تم استلام الرابط رقم {num}.\n📍 موقعك في الطابور: {pos}")
+        await update.message.reply_text(
+            f"📥 تم استلام الرابط رقم {num}.\n"
+            f"📍 موقعك في الطابور: {pos}"
+        )
     else:
         await update.message.reply_text(f"📥 تم استلام الرابط رقم {num}.")
     asyncio.create_task(process_queue(update.effective_chat.id, context))
@@ -419,7 +371,9 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     num = await queue.add(user.id, update.effective_chat.id, sso_url, user_tag, priority)
     pos = queue.position(user.id)
     if pos > 1:
-        await update.message.reply_text(f"📥 تم استلام الرابط رقم {num}.\n📍 موقعك في الطابور: {pos}")
+        await update.message.reply_text(
+            f"📥 تم استلام الرابط رقم {num}.\n📍 موقعك في الطابور: {pos}"
+        )
     else:
         await update.message.reply_text(f"📥 تم استلام الرابط رقم {num}.")
 
@@ -524,168 +478,6 @@ async def process_queue(chat_id, context):
 
 
 # ═══════════════════════════════════════════
-# SSH WebSocket — France مباشرة
-# ═══════════════════════════════════════════
-
-async def handle_ssh(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    log.info("🔐 SSH WebSocket clicked")
-
-    query = update.callback_query
-    user = update.effective_user
-
-    if await db.is_globally_stopped() and not is_admin(user.id):
-        try:
-            await query.message.reply_text("⛔ *البوت متوقف حالياً*", parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            pass
-        return
-
-    if not await db.has_access(user.id):
-        try:
-            await query.message.reply_text("🔒 ما عندكش صلاحية.", parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            pass
-        return
-
-    try:
-        msg = await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text="⏳ جاري إنشاء حساب SSH France...",
-        )
-    except Exception:
-        return
-
-    try:
-        from automation.sshs8 import SSHS8
-    except Exception as e:
-        log.error(f"❌ import sshs8: {e}")
-        try:
-            await msg.edit_text(f"❌ خطأ: {e}")
-        except Exception:
-            pass
-        return
-
-    browser = StealthBrowser()
-    try:
-        ctx = await browser.start()
-        ssh = SSHS8(ctx, sender=msg, user_tag=user.username or user.first_name)
-        ssh.set_chat(query.message.chat_id)
-        ssh.bot = context.bot
-
-        ok = await ssh.open_france_page()
-        if not ok:
-            await msg.edit_text("❌ ما قدرناش نفتحو الصفحة.")
-            try:
-                await browser.close()
-            except Exception:
-                pass
-            return
-
-        result = await ssh.create_account()
-
-        if not result.get("success"):
-            error_msg = result.get("message", "سبب غير معروف")
-            await msg.edit_text(f"❌ فشل.\n\n{error_msg}")
-            try:
-                await ssh.close()
-                await browser.close()
-            except Exception:
-                pass
-            return
-
-        host = result.get("host")
-        username = result.get("username")
-        password = result.get("password")
-
-        if not host or not username or not password:
-            await msg.edit_text(
-                "❌ بيانات غير مكتملة.\n"
-                f"Host: {host}\nUser: {username}\nPass: {password}"
-            )
-            try:
-                await ssh.close()
-                await browser.close()
-            except Exception:
-                pass
-            return
-
-        # ✅ Screenshot نهائي
-        try:
-            if ssh.page:
-                shot_path = f"/tmp/ssh_account_{user.id}.png"
-                await ssh.page.screenshot(path=shot_path, full_page=True, timeout=10000)
-                with open(shot_path, "rb") as photo:
-                    await context.bot.send_photo(
-                        chat_id=query.message.chat_id,
-                        photo=photo,
-                        caption="📸 صفحة الحساب — France",
-                    )
-                try:
-                    os.remove(shot_path)
-                except Exception:
-                    pass
-        except Exception as e:
-            log.warning(f"⚠️ screenshot: {e}")
-
-        # ✅ معلومات الحساب
-        await context.bot.send_message(
-            chat_id=query.message.chat_id,
-            text=(
-                f"✅ *SSH Account*\n\n"
-                f"🌍 الدولة: France 🇫🇷\n"
-                f"🖥️ Host: `{host}`\n"
-                f"🔌 Port: `22`\n"
-                f"👤 User: `{username}`\n"
-                f"🔑 Pass: `{password}`"
-            ),
-            parse_mode=ParseMode.MARKDOWN,
-        )
-
-        # ✅ ملف dark
-        new_uri = build_ssh_dark_with_creds(host, username, password)
-        if not new_uri:
-            await msg.edit_text("❌ فشل بناء ملف dark.")
-            return
-
-        filename = "SSH - France.dark"
-        bio = io.BytesIO(new_uri.encode("utf-8"))
-        bio.name = filename
-        bio.seek(0)
-
-        await context.bot.send_document(
-            chat_id=query.message.chat_id,
-            document=bio,
-            filename=filename,
-            caption=f"📁 {filename}",
-        )
-
-        try:
-            await msg.delete()
-        except Exception:
-            pass
-
-        try:
-            await ssh.close()
-        except Exception:
-            pass
-        try:
-            await browser.close()
-        except Exception:
-            pass
-
-    except Exception as e:
-        log.exception("فشل SSH")
-        try:
-            await msg.edit_text(f"❌ فشل: {str(e)[:300]}")
-        except Exception:
-            pass
-        try:
-            await browser.close()
-        except Exception:
-            pass
-
-
-# ═══════════════════════════════════════════
 # ADMIN
 # ═══════════════════════════════════════════
 
@@ -703,13 +495,9 @@ async def admin_stats(query):
     active = await db.get_active_users()
     banned = await db.get_banned_users()
     reqs = await db.get_requests()
-    stopped = await db.is_globally_stopped()
-
-    status = "⛔ موقف للجميع" if stopped else "✅ شغال"
 
     text = (
         f"📊 *إحصائيات البوت*\n\n"
-        f"🟢 الحالة: {status}\n"
         f"👥 مجموع المستخدمين: {len(users)}\n"
         f"✅ مستخدمين نشطين: {len(active)}\n"
         f"🚫 محظورين: {len(banned)}\n"
@@ -778,7 +566,10 @@ async def admin_requests(query):
 async def admin_priority(query, context):
     context.user_data["await"] = "priority"
     try:
-        await query.message.edit_text("⚡ *زيادة سرعة مستخدم*\n\nأرسل ID المستخدم:", parse_mode=ParseMode.MARKDOWN)
+        await query.message.edit_text(
+            "⚡ *زيادة سرعة مستخدم*\n\nأرسل ID المستخدم:",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except Exception:
         pass
 
@@ -786,7 +577,10 @@ async def admin_priority(query, context):
 async def admin_ban(query, context):
     context.user_data["await"] = "ban"
     try:
-        await query.message.edit_text("🔨 *حظر مستخدم*\n\nأرسل ID:", parse_mode=ParseMode.MARKDOWN)
+        await query.message.edit_text(
+            "🔨 *حظر مستخدم*\n\nأرسل ID:",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except Exception:
         pass
 
@@ -794,7 +588,10 @@ async def admin_ban(query, context):
 async def admin_grant(query, context):
     context.user_data["await"] = "grant"
     try:
-        await query.message.edit_text("✅ *إعطاء صلاحية*\n\nأرسل ID:", parse_mode=ParseMode.MARKDOWN)
+        await query.message.edit_text(
+            "✅ *إعطاء صلاحية*\n\nأرسل ID:",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except Exception:
         pass
 
@@ -802,7 +599,10 @@ async def admin_grant(query, context):
 async def admin_pause(query, context):
     context.user_data["await"] = "pause"
     try:
-        await query.message.edit_text("⏸️ *توقيف/تشغيل*\n\nأرسل ID:", parse_mode=ParseMode.MARKDOWN)
+        await query.message.edit_text(
+            "⏸️ *توقيف/تشغيل*\n\nأرسل ID:",
+            parse_mode=ParseMode.MARKDOWN,
+        )
     except Exception:
         pass
 
@@ -810,33 +610,9 @@ async def admin_pause(query, context):
 async def admin_broadcast(query, context):
     context.user_data["await"] = "broadcast"
     try:
-        await query.message.edit_text("📢 *إرسال رسالة*\n\nأرسل الرسالة:", parse_mode=ParseMode.MARKDOWN)
-    except Exception:
-        pass
-
-
-async def admin_stop_all(query):
-    await db.set_global_stop(True)
-    try:
         await query.message.edit_text(
-            "⛔ *تم إيقاف البوت عن جميع المستخدمين*\n\n"
-            "✅ غير ADMIN كيقدر يستعملو.\n"
-            "🔙 اضغط للرجوع.",
+            "📢 *إرسال رسالة*\n\nأرسل الرسالة:",
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=admin_menu(),
-        )
-    except Exception:
-        pass
-
-
-async def admin_start_all(query):
-    await db.set_global_stop(False)
-    try:
-        await query.message.edit_text(
-            "▶️ *تم تشغيل البوت للجميع*\n\n"
-            "✅ المستخدمين المسموحين رايح يقدرون يستعملو.",
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=admin_menu(),
         )
     except Exception:
         pass
@@ -910,18 +686,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
     data = query.data
-    log.info(f"🔘 callback: {data}")
-
-    if data == "ssh_ws":
-        try:
-            await handle_ssh(update, context)
-        except Exception as e:
-            log.exception("فشل SSH")
-            try:
-                await query.message.reply_text(f"❌ {str(e)[:200]}")
-            except Exception:
-                pass
-        return
 
     if data == "status":
         await status_cmd(update, context)
@@ -930,16 +694,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == "back_main":
         if is_admin(user.id):
             try:
-                await query.message.edit_text(
-                    messages.WELCOME_ADMIN,
-                    parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=main_menu(True),
-                    disable_web_page_preview=True,
-                )
+                await query.message.edit_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(True), disable_web_page_preview=True)
             except Exception:
                 pass
         return
 
+    # ✅ ADMIN فقط
     if data.startswith("admin") and not is_admin(user.id):
         await query.message.reply_text("🚫 نتا ماشي ADMIN")
         return
@@ -964,7 +724,3 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await admin_pause(query, context)
     elif data == "admin_broadcast":
         await admin_broadcast(query, context)
-    elif data == "admin_stop_all":
-        await admin_stop_all(query)
-    elif data == "admin_start_all":
-        await admin_start_all(query)

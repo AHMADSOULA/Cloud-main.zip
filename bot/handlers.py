@@ -127,10 +127,17 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            if err_code == "service_already_exists": error_msg = "❌ توقف النشر: يوجد خدمة تعمل بنفس الاسم.\nيرجى إرسال رابط SSO جديد."
-            elif err_code == "invalid_docker_image": error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
-            elif err_code == "image_field_empty": error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
-            else: error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
+            if err_code == "service_already_exists": 
+                error_msg = "❌ توقف النشر: يوجد خدمة تعمل بنفس الاسم.\nيرجى إرسال رابط SSO جديد."
+            elif err_code == "invalid_docker_image": 
+                error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
+            elif err_code == "image_field_empty": 
+                error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
+            elif err_code == "browser_crashed":
+                error_msg = "❌ المتصفح طاح (Browser Crashed).\nيرجى إعادة المحاولة برابط جديد."
+            else: 
+                error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
+                
             await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:

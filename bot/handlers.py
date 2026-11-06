@@ -305,7 +305,9 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
             elif err_code == "service_already_exists":
                 error_msg = f"❌ يوجد خدمة تعمل بنفس الاسم.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
             else:
-                error_msg = f"❌ فشل النشر:\n{result.get('message')}{refund_text}"
+                # ✅ التعديل: إلا كان الخطأ خاوي، كنكتبو رسالة واضحة
+                detail = result.get("message") or "حدث خطأ غير متوقع أثناء التنفيذ."
+                error_msg = f"❌ فشل النشر:\n{detail}{refund_text}"
             
             await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
@@ -314,6 +316,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
         except: pass
         if cost > 0 and not is_admin(user_id):
             await db.update_points(user_id, cost)
-        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:100]}\nتم اعادة نقاط")
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e) or 'غير معروف'}\nتم اعادة نقاط")
     finally:
         await browser.close()

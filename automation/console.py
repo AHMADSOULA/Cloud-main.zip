@@ -1,6 +1,5 @@
 import asyncio
 import os
-import random
 from playwright.async_api import expect
 from utils.logger import get_logger
 
@@ -18,6 +17,7 @@ class CloudConsole:
         try:
             if not page or page.is_closed(): return
             path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
+            # صورة سريعة وخفيفة
             await page.screenshot(path=path, full_page=False, type="jpeg", quality=50, timeout=5000) 
             with open(path, "rb") as f:
                 try:
@@ -91,46 +91,35 @@ class CloudConsole:
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         
-        # ✅ محاولة فتح الصفحة مع إعادة المحاولة (Retry) 3 مرات
         for attempt in range(3):
             try:
                 await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
                 break
             except Exception as e:
-                if "Page crashed" in str(e) or "Target crashed" in str(e):
+                if "crashed" in str(e).lower():
                     log.warning(f"⚠️ الصفحة طاحت، إعادة المحاولة {attempt+1}...")
                     await page.wait_for_timeout(2000)
                     continue
                 else:
                     raise RuntimeError(f"فشل فتح صفحة Cloud Run: {e}")
 
-        await page.wait_for_timeout(4000)
+        await page.wait_for_timeout(3000)
 
         try:
-            label = page.get_by_text("Container Image URL").first
-            await label.click(timeout=10000)
+            # ✅ المحدد الدقيق لحقل الحاوية
+            image_input = page.locator('input[aria-label*="Container Image URL" i]').first
+            await image_input.wait_for(state="visible", timeout=15000)
+            await image_input.click()
             await page.wait_for_timeout(500)
-            await page.keyboard.press("Control+A")
-            await page.keyboard.press("Backspace")
-            await page.keyboard.type(image, delay=10)
-
-            # ✅ تغيير اسم الخدمة لاسم عشوائي باش ما يوقعش خطأ "already exists"
-            await page.wait_for_timeout(1000)
-            service_name_input = page.get_by_role("textbox", name="Service name").first
-            if await service_name_input.count() > 0 and await service_name_input.is_visible():
-                await service_name_input.click()
-                await page.keyboard.press("Control+A")
-                await page.keyboard.press("Backspace")
-                random_name = "app-" + str(random.randint(10000, 99999))
-                await page.keyboard.type(random_name, delay=20)
-                log.info(f"✅ Service Name changed to {random_name}")
-
+            await image_input.press("Control+A")
+            await image_input.press("Backspace")
+            await page.keyboard.type(image, delay=10) # كتابة سريعة
         except Exception as e:
-            log.error(f"❌ فشل في الإدخال: {e}")
+            log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
 
         await page.wait_for_timeout(2000)
-        await self._shot(page, "") # صورة 6
+        await self._shot(page, "") # ✅ صورة 6: تم إدخال الحاوية
 
         try:
             try: await page.get_by_role("radio", name="Allow public access").click(timeout=3000)
@@ -149,8 +138,8 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ فحص سريع جدا للخطأ بعد Create
-        for _ in range(10): 
+        # فحص سريع للخطأ
+        for _ in range(8): 
             await page.wait_for_timeout(500)
             error_text = await page.evaluate("""
                 () => {
@@ -171,9 +160,9 @@ class CloudConsole:
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
-        await self._shot(page, "") # صورة 7
+        await self._shot(page, "") # ✅ صورة 7: انتظار الرابط
         
-        for i in range(40):
+        for i in range(30): # 30 محاولة × 2 ثانية = 60 ثانية
             try:
                 error_text = await page.evaluate("""
                     () => {
@@ -198,13 +187,13 @@ class CloudConsole:
                     }
                 """)
                 if url: 
-                    await self._shot(page, "") # صورة 8 (النجاح)
+                    await self._shot(page, "") # ✅ صورة 8: النجاح
                     return url
             except Exception as e:
                 if "service_already_exists" in str(e) or "deployment_failed" in str(e):
                     raise
 
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(2000)
             if (i + 1) % 10 == 0:
                 try: await page.reload(wait_until="domcontentloaded", timeout=30000)
                 except: pass

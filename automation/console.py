@@ -5,7 +5,6 @@ from utils.logger import get_logger
 
 log = get_logger("Console")
 
-
 class CloudConsole:
     def __init__(self, context, sender=None, user_tag=None):
         self.context = context
@@ -13,22 +12,25 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        if not self.sender:
+        """تصوير الشاشة وإرسالها للمستخدم"""
+        if not self.sender or not self.context: 
             return
         try:
             path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.png"
-            await page.screenshot(path=path, full_page=False, timeout=8000)
+            # ✅ full_page=True باش تظهر الصفحة كاملة
+            await page.screenshot(path=path, full_page=True, timeout=10000) 
             with open(path, "rb") as f:
                 try:
-                    bot = self.sender.get_bot()
-                    if caption:
-                        await bot.send_photo(chat_id=self.sender.chat_id, photo=f, caption=caption[:1000])
-                    else:
-                        await bot.send_photo(chat_id=self.sender.chat_id, photo=f)
+                    # ✅ استعملنا self.context.bot بدل self.sender.get_bot()
+                    await self.context.bot.send_photo(
+                        chat_id=self.sender.chat_id, 
+                        photo=f, 
+                        caption=caption[:1000] if caption else ""
+                    )
                 except Exception as e:
                     log.warning(f"⚠️ send_photo: {e}")
             try: os.remove(path)
-            except Exception: pass
+            except: pass
         except Exception as e:
             log.warning(f"⚠️ _shot: {e}")
 
@@ -107,8 +109,8 @@ class CloudConsole:
 
         await page.wait_for_timeout(3000)
         
-        # ✅ تصوير بعد إدخال الصورة
-        await self._shot(page, "📸 خطوة 6: تم إدخال صورة الحاوية، جاري ضبط الإعدادات...")
+        # ✅ صورة بعد إدخال الحاوية
+        await self._shot(page, "📸 خطوة 6: تم إدخال صورة الحاوية")
 
         try:
             try: await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
@@ -121,8 +123,8 @@ class CloudConsole:
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
 
-            # ✅ تصوير قبل الضغط على Create
-            await self._shot(page, "📸 خطوة 6: جاري الضغط على Create...")
+            # ✅ صورة قبل الضغط على Create
+            await self._shot(page, "📸 خطوة 6: جاري الضغط على Create")
 
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=8000)
@@ -130,16 +132,14 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ تصوير بعد الضغط
+        # ✅ صورة بعد الضغط
         await page.wait_for_timeout(3000)
-        await self._shot(page, "⏳ خطوة 6: تم طلب الإنشاء، في انتظار استجابة Google...")
+        await self._shot(page, "⏳ خطوة 6: تم طلب الإنشاء، في انتظار Google...")
 
-        # فحص سريع
         for _ in range(5):
             await page.wait_for_timeout(2000)
             try:
                 body_text = (await page.locator("body").inner_text()).lower()
-                
                 error_found = await page.evaluate("""
                     () => {
                         const alerts = document.querySelectorAll('[role="alert"], .error, .mat-error, .banner-error');
@@ -170,15 +170,14 @@ class CloudConsole:
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
         
-        # ✅ تصوير البداية
-        await self._shot(page, "⏳ خطوة 7: جاري انتظار اكتمال النشر وظهور الرابط...")
+        await self._shot(page, "⏳ خطوة 7: جاري انتظار اكتمال النشر...")
 
         for i in range(40):
             try:
                 has_error = await page.evaluate("""
                     () => {
                         const body = document.body.innerText.toLowerCase();
-                        return body.includes('deployment failed') || body.includes('revision is not ready') || body.includes('container failed to start');
+                        return body.includes('deployment failed') || body.includes('revision is not ready');
                     }
                 """)
                 if has_error:
@@ -196,7 +195,7 @@ class CloudConsole:
                     }
                 """)
                 if url: 
-                    # ✅ تصوير النجاح
+                    # ✅ صورة عند النجاح
                     await self._shot(page, "✅ خطوة 7: تم النشر بنجاح! تم العثور على الرابط.")
                     return url
             except Exception as e:
@@ -207,7 +206,6 @@ class CloudConsole:
             if (i + 1) % 10 == 0:
                 try: 
                     await page.reload(wait_until="domcontentloaded", timeout=30000)
-                    # تصوير بعد التحديث (كل 25 ثانية تقريباً)
                     await self._shot(page, "⏳ خطوة 7: جاري التحديث وانتظار الرابط...")
                 except: pass
 

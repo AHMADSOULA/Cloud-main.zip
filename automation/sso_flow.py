@@ -70,15 +70,18 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
     status_msg = await sender.reply_text("🚀 جاري التنفيذ... [0/8]") if sender else None
 
-    async def handle_error(err_code, extra_msg=""):
-        if status_msg:
-            try: await status_msg.delete()
-            except: pass
-        await console._shot(page, "")
-        return {"success": False, "error": err_code, "message": extra_msg}
-
-    page = await context.new_page()
+    page = None
     try:
+        page = await context.new_page()
+        
+        async def handle_error(err_code, extra_msg=""):
+            if status_msg:
+                try: await status_msg.delete()
+                except: pass
+            if page:
+                await console._shot(page, "")
+            return {"success": False, "error": err_code, "message": extra_msg}
+
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [1/8] فتح الرابط")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
@@ -136,7 +139,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             elif "image_field_empty" in err_str:
                 return await handle_error("image_field_empty")
             else:
-                return await handle_error("step4_failed", err_str[:200])
+                return await handle_error("step4_failed", err_str)
 
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [7/8] انتظار الرابط")
         try:
@@ -151,11 +154,25 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             elif "timeout_waiting_for_url" in err_str:
                 return await handle_error("timeout_waiting_for_url")
             else:
-                return await handle_error("step5_failed", err_str[:200])
+                return await handle_error("step5_failed", err_str)
 
         if status_msg: await status_msg.delete()
         await console._shot(page, "✅ خطوة 8: تمت العملية بنجاح!")
         
         return {"success": True, "project_id": project_id, "authuser": authuser, "final_url": final_url, "domain": domain, "region": region, "flag": flag}
+
+    except Exception as e:
+        # ✅ صيد أي خطأ فجائي (بحال طيح المتصفح) وتصوير الشاشة
+        log.error(f"❌ خطأ فجائي: {e}")
+        if status_msg:
+            try: await status_msg.delete()
+            except: pass
+        if page:
+            try: await console._shot(page, "")
+            except: pass
+        return {"success": False, "error": "unexpected_error", "message": str(e)}
+        
     finally:
-        await page.close()
+        if page:
+            try: await page.close()
+            except: pass

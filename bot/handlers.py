@@ -18,6 +18,9 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
+# ═══════════════════════════════════════════
+# DARK FILES (VLESS Templates)
+# ═══════════════════════════════════════════
 DARK_FILES = [
     {"name": "YOUTUBE_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="},
     {"name": "SNAPCHAT_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiU05BUENIQVRfNEhf8J-HuvCfh7giLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiZ29vZ2xlLmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYXBpLnNuYXBjaGF0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTEwMjc5NzcwNDc4OC51cy1jZW50cmFsMS5ydW4uYXBwIn0sImluamVjdENvbmZpZyI6eyJtb2RlIjoiUFJPWFkiLCJwcm94eUhvc3QiOiIxNTcuMjQwLjkuMzkiLCJwYXlsb2FkIjoiQ09OTkVDVCBbaG9zdF06W3BvcnRdIEhUVFAvMS4xW2NybGZdeC1jb25uZWN0ZWQtdG86IDM0LjE0My43Mi4yW2NybGZdcHJveHktY29ubmVjdGlvbjoga2VlcC1hbGl2ZVtjcmxmXWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl11c2VyLWFnZW50OiBGQkFWLzAuMCBbY3JsZl14LWlvcmctYnNpZDogQEFNMl9EM1tjcmxmXVtjcmxmXSJ9fX0="},
@@ -48,6 +51,9 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
+# ═══════════════════════════════════════════
+# /start (مع نظام الدعوات)
+# ═══════════════════════════════════════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     inviter_id = None
@@ -69,6 +75,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"أهلاً بك يا <b>{user.first_name}</b> في <b>Cloud Run</b> ☁️✨\n\n📥 أرسل رابط Qwiklabs SSO للبدء، أو اختر من القائمة:"
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
 
+# ═══════════════════════════════════════════
+# handle_url (استقبال SSO)
+# ═══════════════════════════════════════════
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
@@ -94,6 +103,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await update.message.reply_text("✅ تم استلام الرابط.\nالآن اختر الحاوية التي تريد النشر عليها:", reply_markup=containers_menu(containers))
 
+# ═══════════════════════════════════════════
+# button_handler (التفاعل مع الأزرار)
+# ═══════════════════════════════════════════
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -166,6 +178,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, container['image'], query.message, context, cost))
 
+    # ─── أزرار الأدمن ───
     elif data == "admin_panel":
         if not is_admin(user.id): return
         await query.message.edit_text("⚙️ لوحة الأدمن:", reply_markup=admin_menu())
@@ -183,6 +196,9 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.set_session(user.id, state="admin_waiting_points_id")
         await query.message.edit_text("💳 أرسل <b>ID المستخدم</b> الذي تريد شحنه:", parse_mode=ParseMode.HTML)
 
+# ═══════════════════════════════════════════
+# route_text (استقبال النصوص)
+# ═══════════════════════════════════════════
 async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
@@ -222,7 +238,7 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ أرسل /start للبدء.")
 
 # ═══════════════════════════════════════════
-# run_deploy_task (معالجة الأخطاء)
+# run_deploy_task (التعامل مع الأخطاء وإرسال الرسالة النظيفة)
 # ═══════════════════════════════════════════
 async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
     browser = StealthBrowser()
@@ -244,7 +260,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                     bio.name = f"{dark['name']}_{flag} - {domain}.dark"
                     await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
         else:
-            # ✅ نمسحو رسالة "بدأ النشر..."
+            # ✅ حذف رسالة "بدأ النشر..." حتى لا تبقى فوق الصورة
             try: await msg.delete()
             except: pass
             
@@ -268,6 +284,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
             else:
                 error_msg = f"❌ فشل النشر:\n{result.get('message')}{refund_text}"
             
+            # ✅ إرسال الرسالة النهائية تحت الصورة
             await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:

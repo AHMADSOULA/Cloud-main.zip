@@ -115,12 +115,17 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             
             await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
+            # ✅ إرسال 3 ملفات dark مع try/except باش نضمنو يتبعثو كاملين
             for dark in DARK_FILES:
-                new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
-                if new_uri:
-                    bio = io.BytesIO(new_uri.encode("utf-8"))
-                    bio.name = f"{dark['name']}_{flag} - {domain}.dark"
-                    await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
+                try:
+                    new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
+                    if new_uri:
+                        bio = io.BytesIO(new_uri.encode("utf-8"))
+                        bio.name = f"{dark['name']}_{flag} - {domain}.dark"
+                        await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
+                except Exception as file_err:
+                    log.error(f"❌ فشل إرسال ملف {dark['name']}: {file_err}")
+                    
         else:
             try: await msg.delete()
             except: pass

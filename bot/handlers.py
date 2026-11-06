@@ -53,20 +53,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.register_user(user.id, user.username or user.first_name)
 
     if is_admin(user.id):
-        await update.message.reply_text(
-            messages.WELCOME_ADMIN,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu(is_admin=True),
-            disable_web_page_preview=True,
-        )
+        await update.message.reply_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=True), disable_web_page_preview=True)
         return
 
-    await update.message.reply_text(
-        messages.WELCOME_USER,
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=main_menu(is_admin=False),
-        disable_web_page_preview=True,
-    )
+    await update.message.reply_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=False), disable_web_page_preview=True)
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -79,9 +69,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "skills.google" not in sso_url and "qwiklabs" not in sso_url and "accounts.google.com" not in sso_url:
         return await update.message.reply_text("⚠️ الرابط لا يبدو من Google Skills.")
 
-    # ✅ الحاوية الافتراضية الثابتة
     default_image = "docker.io/ajndjd2/ahmed-vip1"
-    
     msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
     asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, msg, context))
 
@@ -102,8 +90,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "admin_stats" and is_admin(user.id):
         total = await db.count_jobs()
         users = await db.get_all_users()
-        text = f"📊 *إحصائيات:*\n\n👥 المستخدمين: {len(users)}\n🔧 المهام: {total}"
-        await query.message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=admin_menu())
+        await query.message.edit_text(f"📊 *إحصائيات:*\n\n👥 المستخدمين: {len(users)}\n🔧 المهام: {total}", parse_mode=ParseMode.MARKDOWN, reply_markup=admin_menu())
 
 async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text or ""
@@ -121,16 +108,12 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
         if result.get("success"):
             domain = result.get("domain")
             flag = result.get("flag", "🌍")
-            
             await db.add_job(user_id, sso_url)
+            
             try: await msg.delete()
             except: pass
             
-            await context.bot.send_message(
-                chat_id=chat_id, 
-                text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", 
-                parse_mode=ParseMode.HTML
-            )
+            await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
             for dark in DARK_FILES:
                 new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
@@ -141,19 +124,13 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
         else:
             try: await msg.delete()
             except: pass
-            
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            if err_code == "service_already_exists":
-                error_msg = "❌ توقف النشر: يوجد خدمة تعمل بنفس الاسم.\nيرجى إرسال رابط SSO جديد."
-            elif err_code == "invalid_docker_image":
-                error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
-            elif err_code == "image_field_empty":
-                error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
-            else:
-                error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
-            
+            if err_code == "service_already_exists": error_msg = "❌ توقف النشر: يوجد خدمة تعمل بنفس الاسم.\nيرجى إرسال رابط SSO جديد."
+            elif err_code == "invalid_docker_image": error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
+            elif err_code == "image_field_empty": error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
+            else: error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
             await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:

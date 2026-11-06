@@ -115,7 +115,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             
             await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
-            # ✅ إرسال 3 ملفات dark مع try/except باش نضمنو يتبعثو كاملين
             for dark in DARK_FILES:
                 try:
                     new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
@@ -129,11 +128,15 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
         else:
             try: await msg.delete()
             except: pass
+            
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            if err_code == "service_already_exists": 
-                error_msg = "❌ توقف النشر: يوجد خدمة تعمل بنفس الاسم.\nيرجى إرسال رابط SSO جديد."
+            # ✅ هنا كنعرضو الرسائل اللي طلبتي بالضبط تحت الصورة
+            if err_code == "service_already_exists":
+                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد."
+            elif err_code == "account_deleted":
+                error_msg = "❌ حساب Google محذوف (Account deleted).\nيرجى إرسال رابط SSO جديد."
             elif err_code == "invalid_docker_image": 
                 error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
             elif err_code == "image_field_empty": 

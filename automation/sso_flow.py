@@ -83,7 +83,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
 
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(2000)
         await console._shot(page, "📸 خطوة 1: تم فتح رابط SSO")
         
         blocked = await _is_blocked(page)
@@ -92,7 +92,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [2/8] TOS")
         try: await console.step1_welcome_screen(page)
         except: pass
-        await page.wait_for_timeout(1500)
+        await page.wait_for_timeout(1000)
         await console._shot(page, "📸 خطوة 2: بعد صفحة الترحيب (TOS)")
         
         blocked = await _is_blocked(page)
@@ -101,7 +101,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [3/8] Terms Dialog")
         try: await console.step2_terms_dialog(page)
         except: pass
-        await page.wait_for_timeout(1500)
+        await page.wait_for_timeout(1000)
         await console._shot(page, "📸 خطوة 3: بعد قبول الشروط")
 
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [4/8] Dashboard")

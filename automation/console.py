@@ -12,7 +12,6 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        """تصوير الشاشة وإرسالها"""
         if not self.sender: return
         try:
             if not page or page.is_closed(): return
@@ -40,7 +39,6 @@ class CloudConsole:
                 button = page.locator("text='I understand'").first
                 if await button.is_visible(timeout=3000):
                     await button.click()
-                    log.info("✅ ضغطنا على I understand")
                     await page.wait_for_load_state("networkidle", timeout=10000)
             except: pass
         except Exception as e:
@@ -59,9 +57,8 @@ class CloudConsole:
             except: pass
             await agree_btn.click()
             await page.wait_for_load_state("domcontentloaded", timeout=10000)
-            log.info("✅ قبلنا الشروط")
         except Exception:
-            log.info("ℹ️ الشروط مابانوش (الحساب ديجا مقبول)، كنتجاوزوهم.")
+            pass
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
@@ -71,7 +68,6 @@ class CloudConsole:
             await page.goto(api_url, wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
             if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
-                log.warning("⚠️ ERR_ABORTED فـ API، إعادة المحاولة...")
                 await page.wait_for_timeout(3000)
                 await page.goto(api_url, wait_until="domcontentloaded", timeout=60000)
             else:
@@ -99,20 +95,26 @@ class CloudConsole:
             await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
         except Exception as e:
             if "ERR_ABORTED" in str(e) or "frame was detached" in str(e):
-                log.warning("⚠️ ERR_ABORTED فـ Cloud Run، إعادة المحاولة...")
                 await page.wait_for_timeout(3000)
                 await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
             else:
                 raise e
 
         await page.wait_for_timeout(5000)
+        
+        # ✅ تصوير 1: بعد فتح الصفحة
+        await self._shot(page, "📸 خطوة 5 (1/3): فتح صفحة الإنشاء")
 
         try:
-            label = page.get_by_text("Container Image URL").first
-            await label.click(timeout=15000)
+            # ✅ محددات متعددة باش نضمنو نلقاو الحقل
+            image_input = page.locator('input[aria-label*="Container Image URL" i], input[placeholder*="Container Image URL" i], input[formcontrolname="image"]').first
+            await image_input.wait_for(state="visible", timeout=15000)
+            await image_input.click()
             await page.wait_for_timeout(500)
             await page.keyboard.type(image, delay=50)
         except Exception as e:
+            # ✅ تصوير 2: إلا فشلنا نلقاو الحقل
+            await self._shot(page, "📸 فشل العثور على حقل الحاوية")
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
 
@@ -129,15 +131,15 @@ class CloudConsole:
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
             
-            # ✅ التعديل: تصوير قبل ضغط Create
-            await self._shot(page, "📸 خطوة 5: قبل ضغط Create (تأكد من الحقول)")
+            # ✅ تصوير 3: قبل ضغط Create
+            await self._shot(page, "📸 خطوة 5 (2/3): قبل ضغط Create")
 
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=10000)
             
-            # ✅ التعديل: تصوير بعد ضغط Create (باش نشوفو واش طلع خطأ ولا لا)
             await page.wait_for_timeout(2000)
-            await self._shot(page, "📸 خطوة 5: بعد ضغط Create")
+            # ✅ تصوير 4: بعد ضغط Create
+            await self._shot(page, "📸 خطوة 5 (3/3): بعد ضغط Create")
 
         except Exception as e:
             log.error(f"❌ فشل في ضغط Create: {e}")

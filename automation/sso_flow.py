@@ -42,11 +42,12 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
     if not project_id:
         return {"success": False, "error": "invalid_link", "message": "❌ Project ID ماكانش في الرابط."}
 
-    # نحددو المنطقة على حساب الرابط
     region = "us-central1" if "password=" in sso_url.lower() else "europe-west1"
     flag = "🇺🇸" if region == "us-central1" else "🇧🇪"
 
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
+    
+    # رسالة وحدة كنبدلوها
     status_msg = await sender.reply_text("⏳ جاري التنفيذ... [0/6]") if sender else None
 
     async def update_status(step, text=""):
@@ -62,61 +63,64 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             if status_msg:
                 try: await status_msg.delete()
                 except: pass
-            if page:
-                await console._shot(page, "📸 تفاصيل الخطأ:")
+            if page: await console._shot(page, "📸 تفاصيل الخطأ:")
             return {"success": False, "error": err_code, "message": extra_msg}
 
+        # 1
         await update_status(1, "فتح الرابط")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
-
+        
         await page.wait_for_timeout(2000)
+        await console._shot(page, "📸 خطوة 1: فتح الرابط")
+        
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
+        # 2
         await update_status(2, "قبول التوجيهات")
         try: await console.step1_welcome_screen(page)
         except: pass
         await page.wait_for_timeout(1000)
+        await console._shot(page, "📸 خطوة 2: بعد قبول التوجيهات")
+        
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
+        # 3
         await update_status(3, "قبول الشروط")
         try: await console.step2_terms_dialog(page)
         except: pass
         await page.wait_for_timeout(1000)
+        await console._shot(page, "📸 خطوة 3: بعد قبول الشروط")
 
+        # 4
         await update_status(4, "تفعيل API")
         authuser = extract_authuser(page.url)
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
+        await console._shot(page, "📸 خطوة 4: تفعيل API")
 
+        # 5
         await update_status(5, "إنشاء الخدمة")
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
             err_str = str(e)
-            if "service_already_exists" in err_str:
-                return await handle_error("service_already_exists")
-            elif "invalid_docker_image" in err_str:
-                return await handle_error("invalid_docker_image")
-            elif "image_field_empty" in err_str:
+            if "image_field_empty" in err_str:
                 return await handle_error("image_field_empty")
             else:
                 return await handle_error("step4_failed", err_str)
+        await console._shot(page, "📸 خطوة 5: إنشاء الخدمة")
 
+        # 6
         await update_status(6, "انتظار الرابط")
         try:
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
-            err_str = str(e)
-            if "deployment_failed" in err_str:
-                return await handle_error("deployment_failed")
-            elif "timeout_waiting_for_url" in err_str:
-                return await handle_error("timeout_waiting_for_url")
-            else:
-                return await handle_error("step5_failed", err_str)
+            return await handle_error("timeout_waiting_for_url", str(e))
+        await console._shot(page, "📸 خطوة 6: النجاح")
 
         if status_msg:
             try: await status_msg.delete()

@@ -63,8 +63,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 try: await status_msg.delete()
                 except: pass
             if page and not page.is_closed():
-                try: await console._shot(page, "📸 تفاصيل الخطأ:")
-                except: pass
+                await console._shot(page, "") # صورة بدون كابسيون، والرسالة كتجي من handlers
             return {"success": False, "error": err_code, "message": extra_msg}
 
         # 1
@@ -103,7 +102,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             await console.step3_enable_api(page, project_id, authuser)
         except Exception as e:
             if "Target page, context or browser has been closed" in str(e):
-                return await handle_error("browser_crashed", "❌ المتصفح طاح. يرجى المحاولة مرة أخرى.")
+                return await handle_error("browser_crashed", "❌ المتصفح طاح.")
         await page.wait_for_timeout(2000)
 
         # 5
@@ -113,7 +112,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         except Exception as e:
             err_str = str(e)
             if "Target page, context or browser has been closed" in err_str:
-                return await handle_error("browser_crashed", "❌ المتصفح طاح. يرجى المحاولة مرة أخرى.")
+                return await handle_error("browser_crashed", "❌ المتصفح طاح.")
             else:
                 return await handle_error("step4_failed", err_str)
 
@@ -124,9 +123,14 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
             err_str = str(e)
-            if "Target page, context or browser has been closed" in err_str:
-                return await handle_error("browser_crashed", "❌ المتصفح طاح أثناء انتظار الرابط.")
-            return await handle_error("timeout_waiting_for_url", err_str)
+            if "service_already_exists" in err_str:
+                return await handle_error("service_already_exists", "❌ يوجد خدمة بنفس الاسم.")
+            elif "deployment_failed" in err_str:
+                return await handle_error("deployment_failed", "❌ فشل النشر.")
+            elif "timeout_waiting_for_url" in err_str:
+                return await handle_error("timeout_waiting_for_url", "❌ انتهى وقت الانتظار.")
+            else:
+                return await handle_error("step5_failed", err_str)
 
         if status_msg:
             try: await status_msg.delete()
@@ -140,7 +144,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             try: await status_msg.delete()
             except: pass
         if page and not page.is_closed():
-            try: await console._shot(page, "📸 تفاصيل الخطأ:")
+            try: await console._shot(page, "")
             except: pass
         return {"success": False, "error": "unexpected_error", "message": str(e)}
     finally:

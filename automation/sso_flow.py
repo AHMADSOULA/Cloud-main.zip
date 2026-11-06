@@ -41,8 +41,7 @@ async def _is_blocked(page) -> str:
             }
         """)
         return result
-    except Exception:
-        return None
+    except: return None
 
 async def _is_dashboard(page) -> bool:
     try:
@@ -59,8 +58,7 @@ async def _is_dashboard(page) -> bool:
                 return false;
             }
         """)
-    except Exception:
-        return False
+    except: return False
 
 async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag="@user") -> dict:
     project_id = extract_project_id(sso_url)
@@ -77,17 +75,14 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg:
             try: await status_msg.delete()
             except: pass
-        # ✅ هادا هو الاستدعاء اللي كان كيطيح البوت حيت الدالة ماكانتش كاينة
         await console._shot(page, "")
         return {"success": False, "error": err_code, "message": extra_msg}
 
     page = await context.new_page()
     try:
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [1/8] فتح الرابط")
-        try:
-            await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
-        except Exception:
-            await page.goto(sso_url, wait_until="commit", timeout=60000)
+        try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
+        except: await page.goto(sso_url, wait_until="commit", timeout=60000)
 
         await page.wait_for_timeout(3000)
         blocked = await _is_blocked(page)
@@ -114,8 +109,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 dashboard_ok = True
                 break
 
-        if not dashboard_ok:
-            return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم")
+        if not dashboard_ok: return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم")
 
         authuser = extract_authuser(page.url)
         
@@ -130,6 +124,8 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             err_str = str(e)
             if "service_already_exists" in err_str:
                 return await handle_error("service_already_exists")
+            elif "invalid_docker_image" in err_str:
+                return await handle_error("invalid_docker_image")
             elif "image_field_empty" in err_str:
                 return await handle_error("image_field_empty")
             else:

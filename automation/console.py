@@ -12,11 +12,13 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
+        """تصوير الشاشة بسرعة (jpeg خفيف بدل png ثقيل)"""
         if not self.sender or not self.context: 
             return
         try:
-            path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.png"
-            await page.screenshot(path=path, full_page=True, timeout=10000) 
+            path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
+            # ✅ full_page=False باش يكون سريع، و jpeg باش يكون خفيف
+            await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=5000) 
             with open(path, "rb") as f:
                 try:
                     await self.context.bot.send_photo(
@@ -35,12 +37,12 @@ class CloudConsole:
         log.info("🚀 step1: Welcome / TOS")
         try:
             await page.wait_for_load_state("domcontentloaded", timeout=10000)
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(1000)
             try: await page.keyboard.press("Enter")
             except: pass
             try:
                 button = page.locator("text='I understand'").first
-                if await button.is_visible(timeout=3000):
+                if await button.is_visible(timeout=2000):
                     await button.click()
             except: pass
         except Exception as e:
@@ -62,7 +64,7 @@ class CloudConsole:
                     await checkboxes.nth(0).click()
             except: pass
             await agree_btn.click()
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(1500)
         except Exception as e:
             log.warning(f"⚠️ Terms Dialog: {e}")
 
@@ -70,18 +72,18 @@ class CloudConsole:
         log.info("🚀 step3: Enable API")
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
         await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
-        await page.wait_for_timeout(2500)
+        await page.wait_for_timeout(2000)
 
         enable_btn = page.get_by_role("button", name="Enable")
         manage_btn = page.get_by_role("button", name="Manage")
         disable_btn = page.get_by_text("Disable API")
 
         try:
-            await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=15000)
+            await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=10000)
             if await enable_btn.is_visible():
                 await enable_btn.click()
                 try:
-                    await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
+                    await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=30000)
                 except: pass
         except Exception as e:
             log.warning(f"⚠️ step3: {e}")
@@ -91,7 +93,7 @@ class CloudConsole:
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         
         await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(6000)
+        await page.wait_for_timeout(4000)
 
         try:
             label = page.get_by_text("Container Image URL").first
@@ -99,45 +101,42 @@ class CloudConsole:
             await page.wait_for_timeout(500)
             await page.keyboard.press("Control+A")
             await page.keyboard.press("Backspace")
-            await page.keyboard.type(image, delay=50)
+            # ✅ كنكتبو بسرعة (delay=10)
+            await page.keyboard.type(image, delay=10)
         except Exception as e:
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
 
-        await page.wait_for_timeout(3000)
-        
+        await page.wait_for_timeout(2000)
         await self._shot(page, "📸 خطوة 6: تم إدخال صورة الحاوية")
 
         try:
-            try: await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
+            try: await page.get_by_role("radio", name="Allow public access").click(timeout=3000)
             except: pass
-            try: await page.get_by_role("radio", name="Instance-based").click(timeout=5000)
+            try: await page.get_by_role("radio", name="Instance-based").click(timeout=3000)
             except: pass
             try: await page.get_by_role("button", name="Hide").click(timeout=2000)
             except: pass
 
             await page.keyboard.press("End")
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(500)
 
             await self._shot(page, "📸 خطوة 6: جاري الضغط على Create")
 
             create_btn = page.get_by_role("button", name="Create")
-            await create_btn.click(force=True, timeout=8000)
+            await create_btn.click(force=True, timeout=5000)
         except Exception as e:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        await page.wait_for_timeout(3000)
-        await self._shot(page, "⏳ خطوة 6: تم طلب الإنشاء، في انتظار Google...")
-
-        # ✅ الفحص السريع جداً (كل ثانية) باش نمسكو الخطأ فوراً
-        for _ in range(5): 
-            await page.wait_for_timeout(1000)
+        # ✅ فحص سريع جدا (كل نص ثانية) باش نمسكو الخطأ فورا
+        for _ in range(10): 
+            await page.wait_for_timeout(500)
             
             error_text = await page.evaluate("""
                 () => {
                     const body = document.body.innerText.toLowerCase();
-                    if (body.includes('service with this name already exists') || body.includes('already exists')) return 'service_already_exists';
+                    if (body.includes('already exists') || body.includes('service with this name')) return 'service_already_exists';
                     if (body.includes('make sure all fields are correct') || body.includes('container image url is required')) return 'invalid_docker_image';
                     return null;
                 }
@@ -148,7 +147,7 @@ class CloudConsole:
                 raise RuntimeError(error_text)
             
             if "run/create" not in page.url:
-                return # دخلنا لصفحة الخدمة، معناها نجح
+                return 
                 
         raise RuntimeError("invalid_docker_image")
 
@@ -158,13 +157,11 @@ class CloudConsole:
 
         for i in range(40):
             try:
-                # ✅ كنقلبو على الخطأ فكل دورة باش نوقفو دغيا
                 error_text = await page.evaluate("""
                     () => {
                         const body = document.body.innerText.toLowerCase();
                         if (body.includes('service with this name already exists') || body.includes('already exists')) return 'service_already_exists';
                         if (body.includes('deployment failed') || body.includes('revision is not ready') || body.includes('container failed to start')) return 'deployment_failed';
-                        if (body.includes('make sure all fields are correct')) return 'invalid_docker_image';
                         return null;
                     }
                 """)
@@ -187,10 +184,10 @@ class CloudConsole:
                     await self._shot(page, "✅ خطوة 7: تم النشر بنجاح! تم العثور على الرابط.")
                     return url
             except Exception as e:
-                if "service_already_exists" in str(e) or "deployment_failed" in str(e) or "invalid_docker_image" in str(e):
+                if "service_already_exists" in str(e) or "deployment_failed" in str(e):
                     raise
 
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(1500)
             if (i + 1) % 10 == 0:
                 try: 
                     await page.reload(wait_until="domcontentloaded", timeout=30000)

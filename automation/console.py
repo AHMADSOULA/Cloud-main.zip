@@ -12,16 +12,13 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        """تصوير الشاشة وإرسالها للمستخدم"""
         if not self.sender or not self.context: 
             return
         try:
             path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.png"
-            # ✅ full_page=True باش تظهر الصفحة كاملة
             await page.screenshot(path=path, full_page=True, timeout=10000) 
             with open(path, "rb") as f:
                 try:
-                    # ✅ استعملنا self.context.bot بدل self.sender.get_bot()
                     await self.context.bot.send_photo(
                         chat_id=self.sender.chat_id, 
                         photo=f, 
@@ -109,7 +106,6 @@ class CloudConsole:
 
         await page.wait_for_timeout(3000)
         
-        # ✅ صورة بعد إدخال الحاوية
         await self._shot(page, "📸 خطوة 6: تم إدخال صورة الحاوية")
 
         try:
@@ -123,7 +119,6 @@ class CloudConsole:
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
 
-            # ✅ صورة قبل الضغط على Create
             await self._shot(page, "📸 خطوة 6: جاري الضغط على Create")
 
             create_btn = page.get_by_role("button", name="Create")
@@ -132,44 +127,40 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ صورة بعد الضغط
         await page.wait_for_timeout(3000)
         await self._shot(page, "⏳ خطوة 6: تم طلب الإنشاء، في انتظار Google...")
 
-        for _ in range(5):
-            await page.wait_for_timeout(2000)
+        # ✅ الفحص السريع (كل ثانية) باش نمسكو الخطأ فوراً
+        for _ in range(10): 
+            await page.wait_for_timeout(1000)
             try:
                 body_text = (await page.locator("body").inner_text()).lower()
-                error_found = await page.evaluate("""
-                    () => {
-                        const alerts = document.querySelectorAll('[role="alert"], .error, .mat-error, .banner-error');
-                        for (let a of alerts) {
-                            if (a.offsetParent !== null) return (a.innerText || '').toLowerCase();
-                        }
-                        return null;
-                    }
-                """)
                 
-                if error_found and len(error_found) > 2:
-                    log.error(f"❌ خطأ من Google: {error_found}")
-                    if "already exists" in error_found:
-                        raise RuntimeError("service_already_exists")
-                    else:
-                        raise RuntimeError("invalid_docker_image")
+                # فحص رسالة الخطأ ديال "الخدمة كاينة"
+                if "already exists" in body_text or "service with this name" in body_text:
+                    log.error("❌ الخدمة كاينة بالفعل (Service already exists)!")
+                    raise RuntimeError("service_already_exists")
                 
+                # فحص واش حقل الحاوية بقا خاوي
+                if "container image url is required" in body_text:
+                    log.error("❌ حقل الحاوية خاوي!")
+                    raise RuntimeError("invalid_docker_image")
+
+                # إلا خرجنا من صفحة الإنشاء، معناها نجح
                 if "run/create" not in page.url:
-                    break 
+                    return 
+                    
             except Exception as e:
                 if "service_already_exists" in str(e) or "invalid_docker_image" in str(e):
                     raise
                 pass
         
+        # إلا بقينا فصفحة الإنشاء بعد 10 ثواني
         if "run/create" in page.url:
             raise RuntimeError("invalid_docker_image")
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
-        
         await self._shot(page, "⏳ خطوة 7: جاري انتظار اكتمال النشر...")
 
         for i in range(40):
@@ -195,7 +186,6 @@ class CloudConsole:
                     }
                 """)
                 if url: 
-                    # ✅ صورة عند النجاح
                     await self._shot(page, "✅ خطوة 7: تم النشر بنجاح! تم العثور على الرابط.")
                     return url
             except Exception as e:

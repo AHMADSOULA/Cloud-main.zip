@@ -8,7 +8,7 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 from bot import messages
-from bot.keyboards import main_menu, admin_menu, containers_menu, my_account_menu
+from bot.keyboards import main_menu, admin_menu
 from database import db
 from utils.helpers import extract_urls
 from utils.logger import get_logger
@@ -18,6 +18,9 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
+# ═══════════════════════════════════════════
+# الملفات 3 ديال DarkTunnel
+# ═══════════════════════════════════════════
 DARK_FILES = [
     {"name": "YOUTUBE_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="},
     {"name": "SNAPCHAT_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiU05BUENIQVRfNEhf8J-HuvCfh7giLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiZ29vZ2xlLmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYXBpLnNuYXBjaGF0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTEwMjc5NzcwNDc4OC51cy1jZW50cmFsMS5ydW4uYXBwIn0sImluamVjdENvbmZpZyI6eyJtb2RlIjoiUFJPWFkiLCJwcm94eUhvc3QiOiIxNTcuMjQwLjkuMzkiLCJwYXlsb2FkIjoiQ09OTkVDVCBbaG9zdF06W3BvcnRdIEhUVFAvMS4xW2NybGZdeC1jb25uZWN0ZWQtdG86IDM0LjE0My43Mi4yW2NybGZdcHJveHktY29ubmVjdGlvbjoga2VlcC1hbGl2ZVtjcmxmXWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl11c2VyLWFnZW50OiBGQkFWLzAuMCBbY3JsZl14LWlvcmctYnNpZDogQEFNMl9EM1tjcmxmXVtjcmxmXSJ9fX0="},
@@ -48,65 +51,53 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
+# ═══════════════════════════════════════════
+# /start
+# ═══════════════════════════════════════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    inviter_id = None
-    if context.args and len(context.args) > 0:
-        try: inviter_id = int(context.args[0])
-        except: pass
-
-    is_new = await db.is_user_new(user.id)
     await db.register_user(user.id, user.username or user.first_name)
-    
-    if is_new and inviter_id and inviter_id != user.id:
-        success = await db.add_invite(inviter_id, user.id)
-        if success:
-            await db.update_points(inviter_id, 2)
-            try: await context.bot.send_message(chat_id=inviter_id, text="🎉 مبروك! شخص جديد دخل عبر رابط الدعوة ديالك، تمت إضافة **2 نقطة** لحسابك.", parse_mode=ParseMode.MARKDOWN)
-            except: pass
 
-    text = f"أهلاً بك يا <b>{user.first_name}</b> في <b>Cloud Run</b> ☁️✨\n\n📥 أرسل رابط Qwiklabs SSO للبدء، أو اختر من القائمة:"
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
+    if is_admin(user.id):
+        await update.message.reply_text(
+            messages.WELCOME_ADMIN,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu(is_admin=True),
+            disable_web_page_preview=True,
+        )
+        return
 
+    await update.message.reply_text(
+        messages.WELCOME_USER,
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=main_menu(is_admin=False),
+        disable_web_page_preview=True,
+    )
+
+# ═══════════════════════════════════════════
+# handle_url (استقبال SSO والنشر مباشرة)
+# ═══════════════════════════════════════════
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
     urls = extract_urls(text)
     
-    if not urls: return await update.message.reply_text("⚠️ أرسل رابط SSO صحيح.")
+    if not urls: 
+        return await update.message.reply_text("⚠️ أرسل رابط SSO صحيح.")
     
     sso_url = urls[0]
-    u = await db.get_user(user.id)
-    cost = 0 if u['deploy_count'] == 0 else 3
+
+    if "skills.google" not in sso_url and "qwiklabs" not in sso_url and "accounts.google.com" not in sso_url:
+        return await update.message.reply_text("⚠️ الرابط لا يبدو من Google Skills.")
+
+    msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
     
-    if cost > 0 and u['points'] < cost and not is_admin(user.id):
-        return await update.message.reply_text(f"❌ ليس لديك نقاط كافية. كل نشر يكلف {cost} نقاط.\nتواصل مع الأدمن لشحن رصيدك.")
+    # كنطلقو العملية فـ الخلفية باش البوت ما يتبلوكاش
+    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, msg, context))
 
-    await db.set_session(user.id, state="waiting_container", sso_url=sso_url)
-    containers = await db.get_user_containers(user.id)
-    
-    if not containers:
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🚀 استخدام حاوية البوت", callback_data="use_default_container")],
-            [InlineKeyboardButton("➕ إضافة حاوية خاصة", callback_data="add_docker")]
-        ])
-        return await update.message.reply_text(
-            "⚠️ ليس لديك حاويات (Docker) مضافة.\nيمكنك استخدام حاوية البوت الجاهزة للبدء فوراً:",
-            reply_markup=keyboard
-        )
-        
-    if len(containers) == 1:
-        container = containers[0]
-        await db.clear_session(user.id) 
-        
-        if cost > 0 and not is_admin(user.id):
-            await db.update_points(user.id, -cost)
-        
-        asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, container['image'], update.effective_message, context, cost))
-        return
-
-    await update.message.reply_text("✅ تم استلام الرابط.\nالآن اختر الحاوية التي تريد النشر عليها:", reply_markup=containers_menu(containers))
-
+# ═══════════════════════════════════════════
+# ADMIN PANEL
+# ═══════════════════════════════════════════
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -114,157 +105,51 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
 
     if data == "back_main":
-        await query.message.edit_text(f"أهلاً بك يا <b>{user.first_name}</b> في <b>Cloud Run</b> ☁️✨\n\n📥 أرسل رابط Qwiklabs SSO للبدء، أو اختر من القائمة:", parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
-        
-    elif data == "my_account":
-        u = await db.get_user(user.id)
-        text = (
-            f"👤 حسابي ونظام الدعوات\n\n"
-            f"🌍 نقاطك الحالية: {u['points']} نقطة\n"
-            f"🚀 عمليات النشر الناجحة: {u['deploy_count']}\n\n"
-            f"💡 كيف يعمل النظام؟\n"
-            f"- أول عملية نشر لك مجانية 🎁\n"
-            f"- كل عملية نشر تكلف 3 نقاط.\n"
-            f"- في حال فشل النشر، تُعاد النقاط لحسابك تلقائياً.\n"
-            f"- كل شخص تدعوه عبر رابطك يمنحك نقطتين (2).\n\n"
-            f"🔗 رابط الدعوة الخاص بك:\n"
-            f"<code>https://t.me/cloudahmedbot?start={user.id}</code>"
-        )
-        await query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
-
-    elif data == "new_deploy":
-        await query.message.edit_text("📥 أرسل رابط Qwiklabs SSO للبدء:")
-
-    elif data == "my_containers":
-        containers = await db.get_user_containers(user.id)
-        list_text = "\n".join([f"📦 {c['name']} → <code>{c['image']}</code>" for c in containers]) or "لا توجد حاويات."
-        await query.message.edit_text(f"🖌️ <b>حاوياتك الخاصة:</b>\n\n{list_text}\n\nيمكنك إدارة حاوياتك:", parse_mode=ParseMode.HTML, reply_markup=my_account_menu())
-        
-    elif data == "add_docker":
-        await db.set_session(user.id, state="waiting_docker_name")
-        await query.message.edit_text("📝 أرسل <b>اسم</b> الحاوية (مثال: `MyDocker`):", parse_mode=ParseMode.HTML)
-        
-    elif data == "del_docker":
-        containers = await db.get_user_containers(user.id)
-        if not containers: return await query.message.edit_text("❌ لا توجد حاويات للحذف.")
-        rows = [[InlineKeyboardButton(f"❌ {c['name']}", callback_data=f"del_{c['id']}")] for c in containers]
-        rows.append([InlineKeyboardButton("🔙 رجوع", callback_data="my_containers")])
-        await query.message.edit_text("🗑️ اختر الحاوية للحذف:", reply_markup=InlineKeyboardMarkup(rows))
-        
-    elif data.startswith("del_"):
-        c_id = int(data.split("_")[1])
-        await db.delete_container(c_id, user.id)
-        await query.message.edit_text("✅ تم حذف الحاوية.", reply_markup=my_account_menu())
-
-    elif data == "use_default_container":
-        u = await db.get_user(user.id)
-        cost = 0 if u['deploy_count'] == 0 else 3
-        
-        if cost > 0 and u['points'] < cost and not is_admin(user.id):
-            return await query.message.edit_text("❌ ليس لديك نقاط كافية. كل نشر يكلف 3 نقاط.")
-
-        session = await db.get_session(user.id)
-        if not session or not session.get('sso_url'):
-            return await query.message.edit_text("❌ انتهت الجلسة أو لم يتم العثور على رابط SSO. أعد إرساله.")
-        
-        sso_url = session['sso_url']
-        await db.clear_session(user.id)
-        
-        if cost > 0 and not is_admin(user.id):
-            await db.update_points(user.id, -cost)
-        
-        default_image = "docker.io/ajndjd2/ahmed-vip1"
-        asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, default_image, query.message, context, cost))
-
-    elif data.startswith("use_docker_"):
-        c_id = int(data.split("_")[2])
-        containers = await db.get_user_containers(user.id)
-        container = next((c for c in containers if c['id'] == c_id), None)
-        
-        if not container: return await query.message.edit_text("❌ الحاوية غير موجودة.")
+        if is_admin(user.id):
+            await query.message.edit_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(True), disable_web_page_preview=True)
+        else:
+            await query.message.edit_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(False), disable_web_page_preview=True)
             
-        session = await db.get_session(user.id)
-        if not session or not session.get('sso_url'): return await query.message.edit_text("❌ لم يتم العثور على رابط SSO، أعد إرساله.")
-            
-        sso_url = session['sso_url']
-        await db.clear_session(user.id) 
-        
-        u = await db.get_user(user.id)
-        cost = 0 if u['deploy_count'] == 0 else 3
-        
-        if cost > 0 and not is_admin(user.id):
-            await db.update_points(user.id, -cost)
-        
-        asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, container['image'], query.message, context, cost))
-
-    elif data == "admin_panel":
-        if not is_admin(user.id): return
+    elif data == "admin" and is_admin(user.id):
         await query.message.edit_text("⚙️ لوحة الأدمن:", reply_markup=admin_menu())
-        
-    elif data == "admin_users":
-        if not is_admin(user.id): return
+    elif data == "admin_stats" and is_admin(user.id):
+        total = await db.count_jobs()
         users = await db.get_all_users()
-        text = "👥 <b>إحصائيات المستخدمين:</b>\n\n"
-        for u in users:
-            text += f"🆔 <code>{u['user_id']}</code>\n💳 نقاط: {u['points']} | 🚀 نشر: {u['deploy_count']} | 🤝 دعوات: {u['invites_count']}\n──────────\n"
-        await query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=admin_menu())
-        
-    elif data == "admin_send_points":
-        if not is_admin(user.id): return
-        await db.set_session(user.id, state="admin_waiting_points_id")
-        await query.message.edit_text("💳 أرسل <b>ID المستخدم</b> الذي تريد شحنه:", parse_mode=ParseMode.HTML)
+        text = f"📊 *إحصائيات:*\n\n👥 المستخدمين: {len(users)}\n🔧 المهام: {total}"
+        await query.message.edit_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=admin_menu())
 
 async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
     text = update.message.text or ""
-    session = await db.get_session(user.id)
-    
-    if session and session.get("state") == "waiting_docker_name":
-        await db.set_session(user.id, state="waiting_docker_image")
-        context.user_data['temp_name'] = text
-        return await update.message.reply_text("📝 الآن أرسل <b>صورة Docker</b> (مثال: `docker.io/user/repo:tag`):", parse_mode=ParseMode.HTML)
-        
-    if session and session.get("state") == "waiting_docker_image":
-        name = context.user_data.get('temp_name', 'Docker1')
-        await db.add_container(user.id, name, text)
-        await db.clear_session(user.id)
-        return await update.message.reply_text("✅ تم إضافة الحاوية بنجاح.", reply_markup=main_menu(is_admin(user.id)))
-
     if extract_urls(text):
         await handle_url(update, context)
         return
-        
-    if is_admin(user.id) and session and session.get("state") == "admin_waiting_points_id":
-        context.user_data['target_id'] = text
-        await db.set_session(user.id, state="admin_waiting_points_amount")
-        return await update.message.reply_text("💳 شحال من نقطة؟ (أرسل رقم):")
-        
-    if is_admin(user.id) and session and session.get("state") == "admin_waiting_points_amount":
-        try:
-            target_id = int(context.user_data.get('target_id'))
-            amount = int(text)
-            await db.update_points(target_id, amount)
-            await db.clear_session(user.id)
-            await update.message.reply_text(f"✅ تم إرسال {amount} نقطة للمستخدم `{target_id}`.", reply_markup=admin_menu())
-        except: await update.message.reply_text("❌ خطأ، أعد المحاولة.")
-        return
+    await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
 
-    await update.message.reply_text("ℹ️ أرسل /start للبدء.")
-
-async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
+# ═══════════════════════════════════════════
+# run_deploy_task
+# ═══════════════════════════════════════════
+async def run_deploy_task(chat_id, user_id, sso_url, msg, context):
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        # ✅ هنا كنبداو العملية وكنمررو msg باش يقدر يبعث الصور عند الخطأ
-        result = await run_sso_flow(ctx, sso_url, image=image, sender=msg, user_tag="user")
+        
+        # ✅ كنبداو العملية
+        result = await run_sso_flow(ctx, sso_url, sender=msg)
         
         if result.get("success"):
             domain = result.get("domain")
             flag = result.get("flag", "🌍")
-            await db.increment_deploy(user_id)
             
-            await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
+            await db.add_job(user_id, sso_url)
+            await msg.delete()
             
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", 
+                parse_mode=ParseMode.HTML
+            )
+            
+            # إرسال الملفات 3
             for dark in DARK_FILES:
                 new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
                 if new_uri:
@@ -272,38 +157,26 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                     bio.name = f"{dark['name']}_{flag} - {domain}.dark"
                     await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
         else:
+            try: await msg.delete()
+            except: pass
+            
             err_code = result.get("error", "")
-            refund_text = ""
+            detail = result.get("message", "")
             
-            if cost > 0 and not is_admin(user_id):
-                await db.update_points(user_id, cost)
-                refund_text = "\nتم اعادة نقاط"
-            
-            if err_code == "account_deleted":
-                error_msg = f"delete account ❌{refund_text}"
-            elif err_code == "signin":
-                error_msg = f"SSO منتهي ❌{refund_text}"
-            elif err_code == "expired":
-                error_msg = f"الرابط منتهي ❌{refund_text}"
-            elif err_code == "no_dashboard":
-                error_msg = f"لم يتم الوصول للوحة التحكم ❌{refund_text}"
+            if err_code == "service_already_exists":
+                error_msg = "❌ توقف النشر: يوجد خدمة تعمل بنفس الاسم.\nيرجى إرسال رابط SSO جديد."
             elif err_code == "invalid_docker_image":
-                error_msg = f"❌ صورة الحاوية (Docker Image) غير صالحة أو غير موجودة.\nتأكد من الرابط أو جرب حاوية أخرى.{refund_text}"
-            elif err_code == "deployment_failed":
-                error_msg = f"❌ فشل النشر (Deployment Failed).\nتأكد من أن الحاوية تعمل بشكل صحيح.{refund_text}"
-            elif err_code == "timeout_waiting_for_url":
-                error_msg = f"❌ انتهى الوقت ولم يتم النشر.\nقد يكون هناك ضغط على السيرفرات.{refund_text}"
-            elif err_code == "service_already_exists":
-                error_msg = f"❌ يوجد خدمة تعمل بنفس الاسم.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
+                error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
+            elif err_code == "image_field_empty":
+                error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
             else:
-                detail = result.get("message") or "حدث خطأ غير متوقع أثناء التنفيذ."
-                error_msg = f"❌ فشل النشر:\n{detail}{refund_text}"
+                error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
             
             await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:
-        if cost > 0 and not is_admin(user_id):
-            await db.update_points(user_id, cost)
-        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e) or 'غير معروف'}\nتم اعادة نقاط")
+        try: await msg.delete()
+        except: pass
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:100]}")
     finally:
         await browser.close()

@@ -10,7 +10,6 @@ log = get_logger("Main")
 
 async def post_init(app):
     await init_db()
-    # ✅ نسجلو الأدمن
     from database import db
     await db.register_user(config.ADMIN_ID, "ADMIN")
     log.info("✅ DB ready")
@@ -22,16 +21,13 @@ async def route_text(update, context):
     user = update.effective_user
     text = update.message.text or ""
 
-    # ✅ ADMIN input
     if await handlers.handle_admin_input(update, context, text):
         return
 
-    # ✅ رابط
     if extract_urls(text):
         await handlers.handle_url(update, context)
         return
 
-    # ✅ session
     session = await db.get_session(user.id)
     if session and session.get("state") == "waiting_password":
         await handlers.handle_password(update, context)

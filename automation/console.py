@@ -4,7 +4,6 @@ from utils.logger import get_logger
 
 log = get_logger("Console")
 
-
 class CloudConsole:
     def __init__(self, context, sender=None, user_tag=None):
         self.context = context
@@ -106,66 +105,32 @@ class CloudConsole:
 
             await page.wait_for_timeout(3000)
 
-            # ✅ التحقق من ظهور خطأ "Something went wrong" من Google
+            # ✅ التحقق من ظهور خطأ "Something went wrong"
             if await page.get_by_text("Something went wrong").is_visible():
-                log.error("❌ Google أظهرت صفحة خطأ! نحاولو نصلحو...")
-                
-                # محاولة 1: نضغطو على Next إذا كان كاين
+                log.error("❌ Google أظهرت صفحة خطأ!")
                 next_btn = page.get_by_role("button", name="Next")
                 if await next_btn.is_visible():
-                    log.info("🔄 نضغط على Next...")
                     await next_btn.click()
                     await page.wait_for_timeout(3000)
 
-                # محاولة 2: نعاودو نحملو الصفحة إلا بقا الخطأ
                 if await page.get_by_text("Something went wrong").is_visible():
-                    log.info("🔄 إعادة تحميل الصفحة...")
                     await page.reload()
                     await page.wait_for_timeout(3000)
-                    # إلا رجعنا للشروط، نعاودو نقبلو
                     if await agree_btn.is_visible():
                         await agree_btn.click()
                         await page.wait_for_timeout(2000)
 
         except Exception as e:
             log.warning(f"⚠️ Dialog: {e}")
-            try:
-                await page.evaluate("""
-                    () => {
-                        for (const el of document.querySelectorAll('mat-checkbox, [role="checkbox"], input[type="checkbox"]')) {
-                            if (el.offsetParent === null) continue;
-                            try { el.click(); } catch (e) {}
-                        }
-                    }
-                """)
-                await asyncio.sleep(1)
-                await page.evaluate("""
-                    () => {
-                        for (const el of document.querySelectorAll('button, [role="button"]')) {
-                            const t = (el.innerText || '').trim().toLowerCase();
-                            if (t.includes('agree and continue')) {
-                                try { el.disabled = false; el.click(); } catch (e) {}
-                            }
-                        }
-                    }
-                """)
-                await asyncio.sleep(1)
-            except Exception:
-                pass
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3")
-
-        api_url = (
-            f"https://console.cloud.google.com/apis/library/"
-            f"run.googleapis.com?project={project_id}&authuser={authuser}"
-        )
+        api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
         await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(2000)
 
         try:
             if "accounts.google.com" in page.url.lower():
-                log.warning("⚠️ sign in — نتجاوزو")
                 return
         except Exception:
             pass
@@ -188,10 +153,7 @@ class CloudConsole:
             log.warning(f"⚠️ step3: {e}")
 
     async def step4_create_cloud_run(self, page, project_id, authuser, image, region="us-central1"):
-        run_url = (
-            f"https://console.cloud.google.com/run/create"
-            f"?project={project_id}&authuser={authuser}&region={region}"
-        )
+        run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         log.info(f"🌐 step4 — region={region}")
 
         await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
@@ -215,8 +177,7 @@ class CloudConsole:
                         return null;
                     }
                 """)
-                if clicked:
-                    image_found = True
+                if clicked: image_found = True
             except Exception:
                 pass
 
@@ -229,7 +190,6 @@ class CloudConsole:
 
         await page.wait_for_timeout(500)
         await page.keyboard.type(image, delay=30)
-
         await page.wait_for_timeout(2000)
 
         try:
@@ -251,7 +211,7 @@ class CloudConsole:
         try:
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=8000)
-            log.info("✅ Create")
+            log.info("✅ Create clicked")
         except Exception as e:
             try:
                 clicked = await page.evaluate("""
@@ -270,6 +230,26 @@ class CloudConsole:
                     raise RuntimeError(f"فشل Create: {e}")
             except Exception as e2:
                 raise RuntimeError(f"فشل Create: {e2}")
+
+        # ✅ التعديل الجديد: نستناو 4 ثواني ونشوفو واش طلع مشكل ولا لا
+        await page.wait_for_timeout(4000)
+
+        # 1. التحقق من وجود رسالة خطأ حمراء (بحال "Make sure all fields are correct" أو "Go to issue(s)")
+        error_banner = page.locator('text="Make sure all fields are correct"').or_(
+            page.locator('text="Go to issue(s)"')
+        ).or_(
+            page.locator('text="service already exists"')
+        )
+        
+        if await error_banner.count() > 0 and await error_banner.first.is_visible():
+            log.error("❌ كاين مشكل فـ الإعدادات (يمكن الخدمة ديجا كاينة)")
+            raise RuntimeError("service_already_exists")
+
+        # 2. التحقق واش مازال فصفحة الإنشاء (إلا بقا فيها معناها علق)
+        if "run/create" in page.url and "run/details" not in page.url:
+            log.error("❌ البوت مازال معلق فـ صفحة الإنشاء، الخدمة ديجا كاينة")
+            raise RuntimeError("service_already_exists")
+
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5")
@@ -297,8 +277,7 @@ class CloudConsole:
                         return null;
                     }
                 """)
-                if url:
-                    return url
+                if url: return url
             except Exception:
                 pass
             await page.wait_for_timeout(3000)

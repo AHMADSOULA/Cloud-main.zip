@@ -3,35 +3,44 @@ name: Extract Cloud-main ZIP
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   extract:
     runs-on: ubuntu-latest
 
     steps:
-      - name: تحميل ملفات المستودع
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: فك ضغط Cloud-main.zip
+      - name: Extract Cloud-main.zip
         run: |
           python3 - <<'PY'
-          import zipfile
           import os
+          import zipfile
 
-          zip_file = "Cloud-main.zip"
+          zip_path = "Cloud-main.zip"
 
-          if not os.path.exists(zip_file):
-              raise FileNotFoundError("Cloud-main.zip غير موجود")
+          if not os.path.isfile(zip_path):
+              raise FileNotFoundError(
+                  "Cloud-main.zip was not found in the repository root."
+              )
 
-          with zipfile.ZipFile(zip_file, "r") as z:
-              z.extractall(".")
+          with zipfile.ZipFile(zip_path, "r") as archive:
+              archive.extractall(".")
 
-          print("تم فك الضغط بنجاح")
+          print("Cloud-main.zip extracted successfully.")
           PY
 
-      - name: حفظ الملفات في GitHub
+      - name: Commit extracted files
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git diff --cached --quiet || git commit -m "Extract Cloud-main.zip"
-          git push
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No extracted-file changes to commit."
+          else
+            git commit -m "Extract Cloud-main.zip"
+            git push
+          fi

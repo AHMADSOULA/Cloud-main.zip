@@ -25,7 +25,9 @@ class StealthBrowser:
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage", # ✅ مهم جدا باش ما يطيحش المتصفح
+            "--disable-dev-shm-usage", # ✅ مهم جدا باش ما يطيحش فـ السيرفر
+            "--no-zygote",             # ✅ يقلل من استهلاك الذاكرة
+            "--single-process",        # ✅ كيخلي المتصفح يخدم فـ عملية وحدة
             "--disable-gpu",
             "--disable-software-rasterizer",
             "--disable-accelerated-2d-canvas",
@@ -44,13 +46,11 @@ class StealthBrowser:
             "--hide-scrollbars",
             "--metrics-recording-only",
             "--safebrowsing-disable-auto-update",
-            "--renderer-process-limit=1",
-            "--js-flags=--max-old-space-size=512", # ✅ زيادة الذاكرة شوية
+            "--js-flags=--max-old-space-size=512", # ✅ محدودية الذاكرة ديال JS
             "--window-size=1280,720",
             f"--user-agent={config.USER_AGENT}",
         ]
 
-        # ✅ استعملنا channel: 'chromium' باش نتفاداو مشكل headless-shell
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
             channel="chromium",

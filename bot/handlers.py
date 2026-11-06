@@ -221,9 +221,6 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("ℹ️ أرسل /start للبدء.")
 
-# ═══════════════════════════════════════════
-# run_deploy_task
-# ═══════════════════════════════════════════
 async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
     browser = StealthBrowser()
     try:
@@ -244,7 +241,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                     bio.name = f"{dark['name']}_{flag} - {domain}.dark"
                     await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
         else:
-            # مسح رسالة "بدأ النشر..."
             try: await msg.delete()
             except: pass
             
@@ -263,6 +259,8 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                 error_msg = f"الرابط منتهي ❌{refund_text}"
             elif err_code == "no_dashboard":
                 error_msg = f"لم يتم الوصول للوحة التحكم ❌{refund_text}"
+            elif err_code == "image_field_empty":
+                error_msg = f"❌ فشل إدخال صورة Docker\nجرب حاوية أخرى أو رابط SSO جديد.{refund_text}"
             elif err_code == "service_already_exists":
                 error_msg = f"❌ توقف النشر\nيوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
             else:

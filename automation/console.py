@@ -12,6 +12,7 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
+        """تصوير الشاشة وإرسالها"""
         if not self.sender: return
         try:
             if not page or page.is_closed(): return
@@ -31,14 +32,10 @@ class CloudConsole:
     async def step1_welcome_screen(self, page):
         log.info("🚀 step1: TOS")
         try:
-            # ✅ نستناو الصفحة تحمل بالكامل بحال GC.py
             await page.wait_for_load_state("networkidle", timeout=15000)
             await page.wait_for_timeout(2000)    
-            
             try: await page.keyboard.press("Enter")
             except: pass
-            
-            # ✅ الفحص الذكي: إلا كان زر I understand كاين نضغطو، إلا ماكانش نكملو
             try:
                 button = page.locator("text='I understand'").first
                 if await button.is_visible(timeout=3000):
@@ -46,31 +43,25 @@ class CloudConsole:
                     log.info("✅ ضغطنا على I understand")
                     await page.wait_for_load_state("networkidle", timeout=10000)
             except: pass
-                
         except Exception as e:
             log.warning(f"⚠️ step1: {e}")
 
     async def step2_terms_dialog(self, page):
         log.info("🚀 step2: Terms Dialog")
         agree_btn = page.get_by_role("button", name="Agree and continue")
-        
         try:
-            # ✅ نستناو 10 ثواني، إلا ما بانش معناها الحساب ديجا مقبول
             await agree_btn.wait_for(state="visible", timeout=10000)
-            
             checkboxes = page.get_by_role("checkbox")
             try:
                 await checkboxes.nth(0).click()
                 await asyncio.sleep(1)
                 await checkboxes.nth(1).click()
             except: pass
-            
             await agree_btn.click()
             await page.wait_for_load_state("domcontentloaded", timeout=10000)
             log.info("✅ قبلنا الشروط")
         except Exception:
             log.info("ℹ️ الشروط مابانوش (الحساب ديجا مقبول)، كنتجاوزوهم.")
-            pass
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
@@ -114,7 +105,6 @@ class CloudConsole:
             else:
                 raise e
 
-        # ✅ نستناو 5 ثواني بحال GC.py
         await page.wait_for_timeout(5000)
 
         try:
@@ -126,7 +116,6 @@ class CloudConsole:
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
 
-        # ✅ نستناو 3 ثواني بحال GC.py
         await page.wait_for_timeout(3000)
 
         try:
@@ -140,8 +129,16 @@ class CloudConsole:
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
             
+            # ✅ التعديل: تصوير قبل ضغط Create
+            await self._shot(page, "📸 خطوة 5: قبل ضغط Create (تأكد من الحقول)")
+
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=10000)
+            
+            # ✅ التعديل: تصوير بعد ضغط Create (باش نشوفو واش طلع خطأ ولا لا)
+            await page.wait_for_timeout(2000)
+            await self._shot(page, "📸 خطوة 5: بعد ضغط Create")
+
         except Exception as e:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
@@ -149,7 +146,6 @@ class CloudConsole:
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
         try:
-            # ✅ نستناو 120 ثانية بحال GC.py
             link_locator = page.locator('a[href*="run.app"]')
             await link_locator.wait_for(state="visible", timeout=120000) 
             return await link_locator.get_attribute("href")

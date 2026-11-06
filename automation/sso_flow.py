@@ -29,38 +29,15 @@ def _has_password(url: str) -> bool:
 
 async def _is_blocked(page) -> str:
     try:
-        # ✅ فحص سريع جداً للـ URL باش نمسكو الحساب المحذوف
         url = page.url.lower()
         if "accountdeleted" in url or "deletedaccount" in url:
             return "account_deleted"
         
-        # ✅ فحص محتوى الصفحة بجافاسكريبت
         result = await page.evaluate("""
             () => {
-                const url = window.location.href.toLowerCase();
                 const body = (document.body.innerText || '').toLowerCase();
-
-                if (body.includes('account deleted') || 
-                    body.includes('account has been deleted') || 
-                    body.includes('this account was recently deleted')) {
-                    return 'account_deleted';
-                }
-                
-                if (body.includes("couldn't find your google account") || 
-                    body.includes("couldn't sign you in")) {
-                    return 'signin';
-                }
-
-                if (body.includes('session expired') || 
-                    body.includes('no longer valid') || 
-                    body.includes('link you followed has expired')) {
-                    return 'expired';
-                }
-                
-                if (body.includes('something went wrong')) {
-                    return 'something_went_wrong';
-                }
-
+                if (body.includes('account deleted') || body.includes('account has been deleted')) return 'account_deleted';
+                if (body.includes('session expired') || body.includes('invalid link')) return 'expired';
                 return null;
             }
         """)
@@ -71,17 +48,14 @@ async def _is_blocked(page) -> str:
 async def _is_dashboard(page) -> bool:
     try:
         url = page.url.lower()
-        # ✅ إلا مازال فـ AddsSession أو صفحة خطأ، ماشي Dashboard
         if "addsession" in url or "accountdeleted" in url or "signin" in url:
             return False
-            
         return await page.evaluate("""
             () => {
                 const url = window.location.href.toLowerCase();
                 if (url.includes('console.cloud.google.com')) {
                     const body = (document.body.innerText || '').toLowerCase();
-                    // إلا كان النص فيه "Welcome" أو "Dashboard" أو "Project info"
-                    return body.includes('dashboard') || body.includes('project info') || body.includes('welcome');
+                    return body.includes('dashboard') || body.includes('project info');
                 }
                 return false;
             }
@@ -104,45 +78,35 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg:
             try: await status_msg.delete()
             except: pass
-        await console._shot(page, "") # صورة نظيفة بلا كابسيون
+        await console._shot(page, "")
         return {"success": False, "error": err_code, "message": extra_msg}
 
     page = await context.new_page()
     try:
-        # 1. فتح الرابط
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [1/8] فتح الرابط")
         try:
             await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except Exception:
             await page.goto(sso_url, wait_until="commit", timeout=60000)
 
-        # ✅ فحص فوري بعد التحميل
         await page.wait_for_timeout(3000)
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
-        # 2. TOS
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [2/8] TOS")
-        try:
-            await console.step1_welcome_screen(page)
-        except Exception as e:
-            log.warning(f"⚠️ step1: {e}")
-
+        try: await console.step1_welcome_screen(page)
+        except: pass
         await page.wait_for_timeout(1500)
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
-        # 3. Terms
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [3/8] Terms Dialog")
-        try:
-            await console.step2_terms_dialog(page)
-        except Exception as e:
-            log.warning(f"⚠️ step2: {e}")
+        try: await console.step2_terms_dialog(page)
+        except: pass
 
-        # 4. Dashboard (نستناو بسرعة كل 0.5 ثانية)
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [4/8] Dashboard")
         dashboard_ok = False
-        for _ in range(30): # 30 * 0.5s = 15s max wait
+        for _ in range(30): 
             await page.wait_for_timeout(500)
             blocked = await _is_blocked(page)
             if blocked: return await handle_error(blocked)
@@ -151,18 +115,14 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 break
 
         if not dashboard_ok:
-            return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم (تأكد من الرابط)")
+            return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم")
 
         authuser = extract_authuser(page.url)
         
-        # 5. Enable API
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [5/8] تفعيل API")
-        try:
-            await console.step3_enable_api(page, project_id, authuser)
-        except Exception as e:
-            log.warning(f"⚠️ step3: {e}")
+        try: await console.step3_enable_api(page, project_id, authuser)
+        except: pass
 
-        # 6. Create Cloud Run
         if status_msg: await status_msg.edit_text(f"🚀 جاري التنفيذ... [6/8] إنشاء Cloud Run {flag}")
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
@@ -170,10 +130,11 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             err_str = str(e)
             if "service_already_exists" in err_str:
                 return await handle_error("service_already_exists")
+            elif "image_field_empty" in err_str:
+                return await handle_error("image_field_empty")
             else:
                 return await handle_error("step4_failed", err_str[:200])
 
-        # 7. Get URL
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [7/8] انتظار الرابط")
         try:
             final_url = await console.step5_get_deployed_url(page)

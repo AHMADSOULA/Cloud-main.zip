@@ -42,23 +42,6 @@ async def _is_blocked(page) -> str:
         return result
     except: return None
 
-async def _is_dashboard(page) -> bool:
-    try:
-        url = page.url.lower()
-        if "addsession" in url or "accountdeleted" in url or "signin" in url:
-            return False
-        return await page.evaluate("""
-            () => {
-                const url = window.location.href.toLowerCase();
-                if (url.includes('console.cloud.google.com')) {
-                    const body = (document.body.innerText || '').toLowerCase();
-                    return body.includes('dashboard') || body.includes('project info');
-                }
-                return false;
-            }
-        """)
-    except: return False
-
 async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag="@user") -> dict:
     project_id = extract_project_id(sso_url)
     if not project_id:
@@ -68,66 +51,49 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
     flag = "🇺🇸" if _has_password(sso_url) else "🇧🇪"
 
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
-    status_msg = await sender.reply_text("🚀 جاري التنفيذ... [0/8]") if sender else None
-
     page = None
     try:
         page = await context.new_page()
         
         async def handle_error(err_code, extra_msg=""):
-            if status_msg:
-                try: await status_msg.delete()
-                except: pass
             if page:
-                await console._shot(page, "")
+                await console._shot(page, "") # صورة نظيفة عند الخطأ
             return {"success": False, "error": err_code, "message": extra_msg}
 
-        if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [1/8] فتح الرابط")
+        # 1
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
 
         await page.wait_for_timeout(2000)
-        await console._shot(page, "📸 خطوة 1: تم فتح رابط SSO")
+        await console._shot(page, "") # صورة 1
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
-        if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [2/8] TOS")
+        # 2
         try: await console.step1_welcome_screen(page)
         except: pass
         await page.wait_for_timeout(1000)
-        await console._shot(page, "📸 خطوة 2: بعد صفحة الترحيب (TOS)")
+        await console._shot(page, "") # صورة 2
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
-        if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [3/8] Terms Dialog")
+        # 3
         try: await console.step2_terms_dialog(page)
         except: pass
         await page.wait_for_timeout(1000)
-        await console._shot(page, "📸 خطوة 3: بعد قبول الشروط")
+        await console._shot(page, "") # صورة 3
 
-        if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [4/8] Dashboard")
-        dashboard_ok = False
-        for _ in range(30): 
-            await page.wait_for_timeout(500)
-            blocked = await _is_blocked(page)
-            if blocked: return await handle_error(blocked)
-            if await _is_dashboard(page):
-                dashboard_ok = True
-                break
-
-        if not dashboard_ok: return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم")
-        await console._shot(page, "📸 خطوة 4: لوحة التحكم (Dashboard)")
-
+        # 4 - نتجاوزو الداشبورد ونمشيو ديراكت للـ API باش نسرعو
         authuser = extract_authuser(page.url)
         
-        if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [5/8] تفعيل API")
+        # 5
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
-        await console._shot(page, "📸 خطوة 5: بعد تفعيل Cloud Run API")
+        await console._shot(page, "") # صورة 4
 
-        if status_msg: await status_msg.edit_text(f"🚀 جاري التنفيذ... [6/8] إنشاء Cloud Run {flag}")
+        # 6
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
@@ -136,12 +102,11 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 return await handle_error("service_already_exists")
             elif "invalid_docker_image" in err_str:
                 return await handle_error("invalid_docker_image")
-            elif "image_field_empty" in err_str:
-                return await handle_error("image_field_empty")
             else:
                 return await handle_error("step4_failed", err_str)
+        await console._shot(page, "") # صورة 5 (قبل ما يكليكي على Create)
 
-        if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [7/8] انتظار الرابط")
+        # 7
         try:
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
@@ -156,17 +121,11 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             else:
                 return await handle_error("step5_failed", err_str)
 
-        if status_msg: await status_msg.delete()
-        await console._shot(page, "✅ خطوة 8: تمت العملية بنجاح!")
-        
+        await console._shot(page, "") # صورة 6 (النجاح)
         return {"success": True, "project_id": project_id, "authuser": authuser, "final_url": final_url, "domain": domain, "region": region, "flag": flag}
 
     except Exception as e:
-        # ✅ صيد أي خطأ فجائي (بحال طيح المتصفح) وتصوير الشاشة
         log.error(f"❌ خطأ فجائي: {e}")
-        if status_msg:
-            try: await status_msg.delete()
-            except: pass
         if page:
             try: await console._shot(page, "")
             except: pass

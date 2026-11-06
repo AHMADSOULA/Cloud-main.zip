@@ -85,7 +85,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.set_session(user.id, state="waiting_container", sso_url=sso_url)
     containers = await db.get_user_containers(user.id)
     
-    # ✅ التعديل: إلا ماعندوش حاويات، نعرضو ليه زر الحاوية الافتراضية
     if not containers:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🚀 استخدام حاوية البوت", callback_data="use_default_container")],
@@ -96,7 +95,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=keyboard
         )
         
-    # ✅ إلا كانت حاوية وحدة، يبدا النشر ديراكت
     if len(containers) == 1:
         container = containers[0]
         await db.clear_session(user.id) 
@@ -108,7 +106,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, container['image'], msg, context, cost))
         return
 
-    # إلا كانت كثيرة، كيعرض الأزرار
     await update.message.reply_text("✅ تم استلام الرابط.\nالآن اختر الحاوية التي تريد النشر عليها:", reply_markup=containers_menu(containers))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -160,7 +157,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.delete_container(c_id, user.id)
         await query.message.edit_text("✅ تم حذف الحاوية.", reply_markup=my_account_menu())
 
-    # ✅ زدنا هاد الـ elif باش نتعاملو مع زر الحاوية الافتراضية
     elif data == "use_default_container":
         u = await db.get_user(user.id)
         cost = 0 if u['deploy_count'] == 0 else 3
@@ -180,7 +176,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         await query.message.edit_text("🚀 بدأ النشر باستخدام حاوية البوت...\n⏳ جاري التنفيذ...", parse_mode=ParseMode.HTML)
         
-        # ✅ هنا فين كنمررو الحاوية ديالك
         default_image = "docker.io/ajndjd2/ahmed-vip1"
         asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, default_image, query.message, context, cost))
 
@@ -272,7 +267,10 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
             flag = result.get("flag", "🌍")
             await db.increment_deploy(user_id)
             
-            await msg.edit_text(f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
+            # ✅ كنمسحو رسالة "جاري التنفيذ..." باش نبعثو الرسالة النهائية براسها
+            try: await msg.delete()
+            except: pass
+            await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
             for dark in DARK_FILES:
                 new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)

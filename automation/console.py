@@ -1,7 +1,3 @@
-"""
-automation/console.py
-كل خطوات Google Cloud Console — بلا تصوير عادي
-"""
 import asyncio
 from playwright.async_api import expect
 from utils.logger import get_logger
@@ -16,7 +12,6 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        """screenshot + send (غير عند الفشل)"""
         if not self.sender:
             return
         try:
@@ -36,24 +31,17 @@ class CloudConsole:
         except Exception as e:
             log.warning(f"⚠️ _shot: {e}")
 
-    # ═══════════════════════════════════════
-    # STEP 1
-    # ═══════════════════════════════════════
-
     async def step1_welcome_screen(self, page):
         log.info("🚀 step1")
-
         try:
             await page.wait_for_load_state("networkidle", timeout=10000)
         except Exception:
             pass
         await page.wait_for_timeout(1500)
-
         try:
             await page.keyboard.press("Enter")
         except Exception:
             pass
-
         try:
             button = page.locator("text='I understand'")
             if await button.is_visible(timeout=3000):
@@ -61,7 +49,6 @@ class CloudConsole:
                 log.info("✅ I understand")
         except Exception:
             pass
-
         try:
             await page.evaluate("""
                 () => {
@@ -80,19 +67,12 @@ class CloudConsole:
         except Exception:
             pass
 
-    # ═══════════════════════════════════════
-    # STEP 2
-    # ═══════════════════════════════════════
-
     async def step2_terms_dialog(self, page):
         log.info("🚀 step2")
-
         agree_btn = page.get_by_role("button", name="Agree and continue")
-
         try:
             await agree_btn.wait_for(state="visible", timeout=8000)
             log.info("✅ Agree ظهر")
-
             checkboxes = page.get_by_role("checkbox")
             try:
                 cnt = await checkboxes.count()
@@ -104,7 +84,6 @@ class CloudConsole:
                     await checkboxes.nth(0).click()
             except Exception:
                 pass
-
             try:
                 await agree_btn.click()
             except Exception:
@@ -118,59 +97,24 @@ class CloudConsole:
                         }
                     }
                 """)
-
             await page.wait_for_timeout(1500)
         except Exception as e:
             log.warning(f"⚠️ Dialog: {e}")
-            try:
-                await page.evaluate("""
-                    () => {
-                        for (const el of document.querySelectorAll('mat-checkbox, [role="checkbox"], input[type="checkbox"]')) {
-                            if (el.offsetParent === null) continue;
-                            try { el.click(); } catch (e) {}
-                        }
-                    }
-                """)
-                await asyncio.sleep(1)
-                await page.evaluate("""
-                    () => {
-                        for (const el of document.querySelectorAll('button, [role="button"]')) {
-                            const t = (el.innerText || '').trim().toLowerCase();
-                            if (t.includes('agree and continue')) {
-                                try { el.disabled = false; el.click(); } catch (e) {}
-                            }
-                        }
-                    }
-                """)
-                await asyncio.sleep(1)
-            except Exception:
-                pass
-
-    # ═══════════════════════════════════════
-    # STEP 3
-    # ═══════════════════════════════════════
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3")
-
-        api_url = (
-            f"https://console.cloud.google.com/apis/library/"
-            f"run.googleapis.com?project={project_id}&authuser={authuser}"
-        )
+        api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
         await page.goto(api_url, wait_until="domcontentloaded", timeout=30000)
         await page.wait_for_timeout(2000)
-
         try:
             if "accounts.google.com" in page.url.lower():
                 log.warning("⚠️ sign in — نتجاوزو")
                 return
         except Exception:
             pass
-
         enable_btn = page.get_by_role("button", name="Enable")
         manage_btn = page.get_by_role("button", name="Manage")
         disable_btn = page.get_by_text("Disable API")
-
         try:
             await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=10000)
             if await enable_btn.is_visible():
@@ -184,17 +128,9 @@ class CloudConsole:
         except Exception as e:
             log.warning(f"⚠️ step3: {e}")
 
-    # ═══════════════════════════════════════
-    # STEP 4 — مع region
-    # ═══════════════════════════════════════
-
     async def step4_create_cloud_run(self, page, project_id, authuser, image, region="us-central1"):
-        run_url = (
-            f"https://console.cloud.google.com/run/create"
-            f"?project={project_id}&authuser={authuser}&region={region}"
-        )
+        run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
         log.info(f"🌐 step4 — region={region}")
-
         await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
         await page.wait_for_timeout(5000)
 
@@ -230,7 +166,6 @@ class CloudConsole:
 
         await page.wait_for_timeout(500)
         await page.keyboard.type(image, delay=30)
-
         await page.wait_for_timeout(2000)
 
         try:
@@ -272,13 +207,8 @@ class CloudConsole:
             except Exception as e2:
                 raise RuntimeError(f"فشل Create: {e2}")
 
-    # ═══════════════════════════════════════
-    # STEP 5
-    # ═══════════════════════════════════════
-
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5")
-
         link_locator = page.locator('a[href*="run.app"]')
         try:
             await link_locator.wait_for(state="visible", timeout=60000)
@@ -286,7 +216,6 @@ class CloudConsole:
             return final_url
         except Exception:
             pass
-
         for i in range(30):
             try:
                 url = await page.evaluate("""
@@ -307,5 +236,4 @@ class CloudConsole:
             except Exception:
                 pass
             await page.wait_for_timeout(3000)
-
         raise RuntimeError("ما لقيناش رابط run.app")

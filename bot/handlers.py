@@ -222,7 +222,7 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ أرسل /start للبدء.")
 
 # ═══════════════════════════════════════════
-# run_deploy_task (معالجة الأخطاء تحت الصورة)
+# run_deploy_task (معالجة الأخطاء)
 # ═══════════════════════════════════════════
 async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
     browser = StealthBrowser()
@@ -244,35 +244,37 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                     bio.name = f"{dark['name']}_{flag} - {domain}.dark"
                     await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
         else:
-            err_code = result.get("error", "")
-            err_msg = result.get("message", "")
+            # ✅ نمسحو رسالة "بدأ النشر..."
+            try: await msg.delete()
+            except: pass
             
-            # ✅ استرجاع النقاط
+            err_code = result.get("error", "")
             refund_text = ""
+            
             if cost > 0 and not is_admin(user_id):
                 await db.update_points(user_id, cost)
-                refund_text = f"\n\n💳 تم إعادة النقاط لحسابك."
+                refund_text = "\nتم اعادة نقاط"
             
-            # ✅ عرض الرسالة النظيفة تحت الصورة
             if err_code == "account_deleted":
-                await msg.edit_text(f"❌ <b>account deleted</b>{refund_text}", parse_mode=ParseMode.HTML)
+                error_msg = f"delete account ❌{refund_text}"
             elif err_code == "signin":
-                await msg.edit_text(f"❌ <b>SSO منتهي (تسجيل الدخول)</b>{refund_text}", parse_mode=ParseMode.HTML)
+                error_msg = f"SSO منتهي ❌{refund_text}"
             elif err_code == "expired":
-                await msg.edit_text(f"❌ <b>الرابط منتهي الصلاحية</b>{refund_text}", parse_mode=ParseMode.HTML)
+                error_msg = f"الرابط منتهي ❌{refund_text}"
             elif err_code == "no_dashboard":
-                await msg.edit_text(f"❌ <b>لم نتمكن من الوصول للوحة التحكم</b>{refund_text}", parse_mode=ParseMode.HTML)
+                error_msg = f"لم يتم الوصول للوحة التحكم ❌{refund_text}"
             elif err_code == "service_already_exists":
-                await msg.edit_text(
-                    f"❌ <b>توقف النشر</b>\nيوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}",
-                    parse_mode=ParseMode.HTML
-                )
+                error_msg = f"❌ توقف النشر\nيوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
             else:
-                await msg.edit_text(f"❌ <b>فشل النشر:</b>\n{err_msg}{refund_text}", parse_mode=ParseMode.HTML)
+                error_msg = f"❌ فشل النشر:\n{result.get('message')}{refund_text}"
+            
+            await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:
+        try: await msg.delete()
+        except: pass
         if cost > 0 and not is_admin(user_id):
             await db.update_points(user_id, cost)
-        await msg.edit_text(f"❌ خطأ: {str(e)[:100]}\n\n💳 تم إعادة النقاط لحسابك.", parse_mode=ParseMode.HTML)
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:100]}\nتم اعادة نقاط")
     finally:
         await browser.close()

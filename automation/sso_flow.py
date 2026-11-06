@@ -62,7 +62,9 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             if status_msg:
                 try: await status_msg.delete()
                 except: pass
-            if page: await console._shot(page, "📸 تفاصيل الخطأ:")
+            if page and not page.is_closed():
+                try: await console._shot(page, "📸 تفاصيل الخطأ:")
+                except: pass
             return {"success": False, "error": err_code, "message": extra_msg}
 
         # 1
@@ -103,7 +105,9 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         try: 
             await console.step3_enable_api(page, project_id, authuser)
         except Exception as e:
-            if "crashed" in str(e).lower():
+            if "Target page, context or browser has been closed" in str(e):
+                return await handle_error("browser_crashed", "❌ المتصفح طاح. يرجى المحاولة مرة أخرى.")
+            elif "crashed" in str(e).lower():
                 log.warning("⚠️ الصفحة طاحت فـ API، إعادة المحاولة...")
                 try: await page.close()
                 except: pass
@@ -117,7 +121,10 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
-            if "crashed" in str(e).lower():
+            err_str = str(e)
+            if "Target page, context or browser has been closed" in err_str:
+                return await handle_error("browser_crashed", "❌ المتصفح طاح. يرجى المحاولة مرة أخرى.")
+            elif "crashed" in err_str.lower():
                 log.warning("⚠️ الصفحة طاحت فـ Cloud Run، إعادة المحاولة...")
                 try: await page.close()
                 except: pass
@@ -126,7 +133,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
                 await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
             else:
-                return await handle_error("step4_failed", str(e))
+                return await handle_error("step4_failed", err_str)
         await console._shot(page, "📸 خطوة 5: إنشاء الخدمة")
 
         # 6
@@ -135,7 +142,10 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
-            return await handle_error("timeout_waiting_for_url", str(e))
+            err_str = str(e)
+            if "Target page, context or browser has been closed" in err_str:
+                return await handle_error("browser_crashed", "❌ المتصفح طاح أثناء انتظار الرابط.")
+            return await handle_error("timeout_waiting_for_url", err_str)
         await console._shot(page, "📸 خطوة 6: النجاح")
 
         if status_msg:
@@ -149,7 +159,7 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg:
             try: await status_msg.delete()
             except: pass
-        if page:
+        if page and not page.is_closed():
             try: await console._shot(page, "📸 تفاصيل الخطأ:")
             except: pass
         return {"success": False, "error": "unexpected_error", "message": str(e)}

@@ -17,7 +17,7 @@ async def init_db():
                 banned INTEGER DEFAULT 0,
                 points INTEGER DEFAULT 0,
                 deploy_count INTEGER DEFAULT 0,
-                invites INTEGER DEFAULT 0
+                invites_count INTEGER DEFAULT 0
             )
         """)
         
@@ -32,7 +32,7 @@ async def init_db():
             )
         """)
 
-        # sessions (للـ state)
+        # sessions
         await db.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 user_id INTEGER PRIMARY KEY,
@@ -41,9 +41,24 @@ async def init_db():
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # invites (تسجيل من دعا من)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS invites (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                inviter_id INTEGER,
+                invited_id INTEGER UNIQUE,
+                date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 # ─── USERS ───
+async def is_user_new(user_id: int) -> bool:
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute("SELECT user_id FROM users WHERE user_id=?", (user_id,))
+        return await cur.fetchone() is None
+
 async def register_user(user_id: int, username: str):
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute("INSERT OR IGNORE INTO users (user_id, username) VALUES (?, ?)", (user_id, username))
@@ -72,6 +87,17 @@ async def increment_deploy(user_id: int):
     async with aiosqlite.connect(config.DB_PATH) as db:
         await db.execute("UPDATE users SET deploy_count = deploy_count + 1 WHERE user_id=?", (user_id,))
         await db.commit()
+
+# ─── INVITES ───
+async def add_invite(inviter_id: int, invited_id: int):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        try:
+            await db.execute("INSERT INTO invites (inviter_id, invited_id) VALUES (?, ?)", (inviter_id, invited_id))
+            await db.execute("UPDATE users SET invites_count = invites_count + 1 WHERE user_id=?", (inviter_id,))
+            await db.commit()
+            return True
+        except aiosqlite.IntegrityError:
+            return False # المستخدم ديجا مدعو
 
 # ─── CONTAINERS ───
 async def add_container(user_id: int, name: str, image: str):

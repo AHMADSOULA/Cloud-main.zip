@@ -51,41 +51,59 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
     flag = "🇺🇸" if _has_password(sso_url) else "🇧🇪"
 
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
+    
+    # ✅ رسالة وحدة كنبدلوها
+    status_msg = await sender.reply_text("⏳ جاري التنفيذ... [0/6]") if sender else None
+
+    async def update_status(step, text=""):
+        if status_msg:
+            try: await status_msg.edit_text(f"⏳ جاري التنفيذ... [{step}/6] {text}")
+            except: pass
+
     page = None
     try:
         page = await context.new_page()
         
         async def handle_error(err_code, extra_msg=""):
+            if status_msg:
+                try: await status_msg.delete()
+                except: pass
+            # ✅ هنا فين كنصورو (غير عند الخطأ)
             if page:
-                await console._shot(page, "") # صورة الخطأ
+                await console._shot(page, "📸 تفاصيل الخطأ:")
             return {"success": False, "error": err_code, "message": extra_msg}
 
-        # 1-5 بلا تصوير
+        # 1
+        await update_status(1, "فتح الرابط")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
 
         await page.wait_for_timeout(2000)
-        
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
+        # 2
+        await update_status(2, "قبول الشروط الأولى")
         try: await console.step1_welcome_screen(page)
         except: pass
         await page.wait_for_timeout(1000)
-        
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
+        # 3
+        await update_status(3, "قبول Terms Dialog")
         try: await console.step2_terms_dialog(page)
         except: pass
         await page.wait_for_timeout(1000)
 
+        # 4
+        await update_status(4, "تفعيل API")
         authuser = extract_authuser(page.url)
-
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
 
-        # 6: التصوير كيبدا هنا
+        # 5
+        await update_status(5, "إنشاء Cloud Run")
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
@@ -99,7 +117,8 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             else:
                 return await handle_error("step4_failed", err_str)
 
-        # 7-8
+        # 6
+        await update_status(6, "انتظار الرابط")
         try:
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
@@ -114,12 +133,19 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             else:
                 return await handle_error("step5_failed", err_str)
 
+        if status_msg:
+            try: await status_msg.delete()
+            except: pass
+
         return {"success": True, "project_id": project_id, "authuser": authuser, "final_url": final_url, "domain": domain, "region": region, "flag": flag}
 
     except Exception as e:
         log.error(f"❌ خطأ فجائي: {e}")
+        if status_msg:
+            try: await status_msg.delete()
+            except: pass
         if page:
-            try: await console._shot(page, "")
+            try: await console._shot(page, "📸 تفاصيل الخطأ:")
             except: pass
         return {"success": False, "error": "unexpected_error", "message": str(e)}
         

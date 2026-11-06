@@ -21,5 +21,7 @@ def admin_menu():
         [InlineKeyboardButton("✅ إعطاء صلاحية عبر ID", callback_data="admin_grant")],
         [InlineKeyboardButton("⏸️ توقيف/تشغيل مستخدم", callback_data="admin_pause")],
         [InlineKeyboardButton("📢 إرسال رسالة إلى مستخدمين", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("⛔ إيقاف البوت عن الجميع", callback_data="admin_stop_all")],
+        [InlineKeyboardButton("▶️ تشغيل البوت للجميع", callback_data="admin_start_all")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="back_main")],
     ])

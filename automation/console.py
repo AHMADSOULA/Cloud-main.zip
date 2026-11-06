@@ -43,7 +43,6 @@ class CloudConsole:
                 button = page.locator("text='I understand'").first
                 if await button.is_visible(timeout=3000):
                     await button.click()
-                    log.info("✅ I understand clicked")
             except: pass
         except Exception as e:
             log.warning(f"⚠️ step1: {e}")
@@ -81,14 +80,10 @@ class CloudConsole:
         try:
             await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=15000)
             if await enable_btn.is_visible():
-                log.info("⏳ تفعيل API...")
                 await enable_btn.click()
                 try:
                     await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
-                    log.info("✅ تم تفعيل API")
                 except: pass
-            elif await manage_btn.is_visible():
-                log.info("ℹ️ API مفعل من قبل")
         except Exception as e:
             log.warning(f"⚠️ step3: {e}")
 
@@ -106,7 +101,6 @@ class CloudConsole:
             await page.keyboard.press("Control+A")
             await page.keyboard.press("Backspace")
             await page.keyboard.type(image, delay=50)
-            log.info(f"✅ تم كتابة صورة الدوكر: {image}")
         except Exception as e:
             log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
             raise RuntimeError("image_field_empty")
@@ -126,33 +120,60 @@ class CloudConsole:
 
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=8000)
-            log.info("✅ Create clicked")
-            
         except Exception as e:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ الفحص السريع (6 ثواني كافيين باش Google تتحقق)
-        await page.wait_for_timeout(6000)
-        
-        try:
-            body_text = (await page.locator("body").inner_text()).lower()
-            # إلا كان خطأ ديال "كاينة" أو "غير صالحة" أو بقينا فصفحة الإنشاء
-            if "already exists" in body_text or "service name is already in use" in body_text:
-                log.error("❌ الخدمة كاينة بالفعل!")
-                raise RuntimeError("service_already_exists")
-            
-            if "run/create" in page.url:
-                log.error("❌ البوت مازال معلق فصفحة الإنشاء (الحاوية غالطة أو حقول ناقصة)")
-                raise RuntimeError("invalid_docker_image")
+        # ✅ فحص سريع (10 ثواني كافيين باش نعرفو واش كاين شي مشكل)
+        for _ in range(5):
+            await page.wait_for_timeout(2000)
+            try:
+                body_text = (await page.locator("body").inner_text()).lower()
                 
-        except Exception:
-            pass
+                # إلا لقينا شي خطأ أحمر
+                error_found = await page.evaluate("""
+                    () => {
+                        const alerts = document.querySelectorAll('[role="alert"], .error, .mat-error, .banner-error');
+                        for (let a of alerts) {
+                            if (a.offsetParent !== null) return (a.innerText || '').toLowerCase();
+                        }
+                        return null;
+                    }
+                """)
+                
+                if error_found and len(error_found) > 2:
+                    log.error(f"❌ خطأ من Google: {error_found}")
+                    if "already exists" in error_found:
+                        raise RuntimeError("service_already_exists")
+                    else:
+                        raise RuntimeError("invalid_docker_image")
+                
+                # إلا كان مازال فصفحة الإنشاء بعد 10 ثواني
+                if "run/create" not in page.url:
+                    break # دخلنا لصفحة الخدمة، معناها نجح
+            except Exception as e:
+                if "service_already_exists" in str(e) or "invalid_docker_image" in str(e):
+                    raise
+                pass
+        
+        if "run/create" in page.url:
+            raise RuntimeError("invalid_docker_image")
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
         for i in range(40):
             try:
+                # ✅ فحص سريع واش كاين خطأ فـ النشر
+                has_error = await page.evaluate("""
+                    () => {
+                        const body = document.body.innerText.toLowerCase();
+                        return body.includes('deployment failed') || body.includes('revision is not ready') || body.includes('container failed to start');
+                    }
+                """)
+                if has_error:
+                    log.error("❌ فشل النشر (Container failed)")
+                    raise RuntimeError("deployment_failed")
+
                 url = await page.evaluate("""
                     () => {
                         const links = document.querySelectorAll('a');
@@ -164,24 +185,13 @@ class CloudConsole:
                     }
                 """)
                 if url: return url
-
-                url = await page.evaluate("""
-                    () => {
-                        const body = document.body.innerText || '';
-                        const m = body.match(/https:\\/\\/[a-zA-Z0-9\\-]+\\.run\\.app/);
-                        if (m) return m[0];
-                        return null;
-                    }
-                """)
-                if url: return url
-            except: pass
+            except Exception as e:
+                if "deployment_failed" in str(e):
+                    raise
 
             await page.wait_for_timeout(2500)
-
             if (i + 1) % 10 == 0:
-                try:
-                    await page.reload(wait_until="domcontentloaded", timeout=30000)
-                    await page.wait_for_timeout(2500)
+                try: await page.reload(wait_until="domcontentloaded", timeout=30000)
                 except: pass
 
-        raise RuntimeError("ما لقيناش رابط run.app")
+        raise RuntimeError("timeout_waiting_for_url")

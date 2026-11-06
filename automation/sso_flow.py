@@ -27,34 +27,72 @@ def extract_authuser(page_url: str) -> str:
 def _has_password(url: str) -> bool:
     return "password=" in (url or "").lower()
 
+async def _is_blocked(page) -> str:
+    try:
+        # ✅ فحص سريع جداً للـ URL باش نمسكو الحساب المحذوف
+        url = page.url.lower()
+        if "accountdeleted" in url or "deletedaccount" in url:
+            return "account_deleted"
+        
+        # ✅ فحص محتوى الصفحة بجافاسكريبت
+        result = await page.evaluate("""
+            () => {
+                const url = window.location.href.toLowerCase();
+                const body = (document.body.innerText || '').toLowerCase();
+
+                if (body.includes('account deleted') || 
+                    body.includes('account has been deleted') || 
+                    body.includes('this account was recently deleted')) {
+                    return 'account_deleted';
+                }
+                
+                if (body.includes("couldn't find your google account") || 
+                    body.includes("couldn't sign you in")) {
+                    return 'signin';
+                }
+
+                if (body.includes('session expired') || 
+                    body.includes('no longer valid') || 
+                    body.includes('link you followed has expired')) {
+                    return 'expired';
+                }
+                
+                if (body.includes('something went wrong')) {
+                    return 'something_went_wrong';
+                }
+
+                return null;
+            }
+        """)
+        return result
+    except Exception:
+        return None
+
 async def _is_dashboard(page) -> bool:
     try:
+        url = page.url.lower()
+        # ✅ إلا مازال فـ AddsSession أو صفحة خطأ، ماشي Dashboard
+        if "addsession" in url or "accountdeleted" in url or "signin" in url:
+            return False
+            
         return await page.evaluate("""
             () => {
                 const url = window.location.href.toLowerCase();
-                return url.includes('console.cloud.google.com') && !url.includes('signin') && !url.includes('accounts.google.com');
+                if (url.includes('console.cloud.google.com')) {
+                    const body = (document.body.innerText || '').toLowerCase();
+                    // إلا كان النص فيه "Welcome" أو "Dashboard" أو "Project info"
+                    return body.includes('dashboard') || body.includes('project info') || body.includes('welcome');
+                }
+                return false;
             }
         """)
     except Exception:
         return False
 
-async def _is_blocked(page) -> str:
-    try:
-        return await page.evaluate("""
-            () => {
-                const body = (document.body.innerText || '').toLowerCase();
-                if (body.includes('account deleted') || body.includes('account has been deleted')) return 'account_deleted';
-                if (body.includes('session expired') || body.includes('invalid link')) return 'expired';
-                return null;
-            }
-        """)
-    except Exception:
-        return None
-
 async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag="@user") -> dict:
     project_id = extract_project_id(sso_url)
     if not project_id:
-        raise RuntimeError("❌ Project ID ماكانش في الرابط.")
+        return {"success": False, "error": "invalid_link", "message": "❌ Project ID ماكانش في الرابط."}
 
     region = "us-central1" if _has_password(sso_url) else "europe-west1"
     flag = "🇺🇸" if _has_password(sso_url) else "🇧🇪"
@@ -66,36 +104,65 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
         if status_msg:
             try: await status_msg.delete()
             except: pass
-        await console._shot(page, "") # ✅ صورة بدون كابسيون
+        await console._shot(page, "") # صورة نظيفة بلا كابسيون
         return {"success": False, "error": err_code, "message": extra_msg}
 
     page = await context.new_page()
     try:
-        await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
-        await page.wait_for_timeout(2500)
+        # 1. فتح الرابط
+        if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [1/8] فتح الرابط")
+        try:
+            await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
+        except Exception:
+            await page.goto(sso_url, wait_until="commit", timeout=60000)
 
+        # ✅ فحص فوري بعد التحميل
+        await page.wait_for_timeout(3000)
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
+        # 2. TOS
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [2/8] TOS")
-        await console.step1_welcome_screen(page)
+        try:
+            await console.step1_welcome_screen(page)
+        except Exception as e:
+            log.warning(f"⚠️ step1: {e}")
 
+        await page.wait_for_timeout(1500)
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
+        # 3. Terms
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [3/8] Terms Dialog")
-        await console.step2_terms_dialog(page)
+        try:
+            await console.step2_terms_dialog(page)
+        except Exception as e:
+            log.warning(f"⚠️ step2: {e}")
 
+        # 4. Dashboard (نستناو بسرعة كل 0.5 ثانية)
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [4/8] Dashboard")
-        for _ in range(20):
-            await page.wait_for_timeout(1000)
-            if await _is_dashboard(page): break
+        dashboard_ok = False
+        for _ in range(30): # 30 * 0.5s = 15s max wait
+            await page.wait_for_timeout(500)
+            blocked = await _is_blocked(page)
+            if blocked: return await handle_error(blocked)
+            if await _is_dashboard(page):
+                dashboard_ok = True
+                break
+
+        if not dashboard_ok:
+            return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم (تأكد من الرابط)")
 
         authuser = extract_authuser(page.url)
         
+        # 5. Enable API
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [5/8] تفعيل API")
-        await console.step3_enable_api(page, project_id, authuser)
+        try:
+            await console.step3_enable_api(page, project_id, authuser)
+        except Exception as e:
+            log.warning(f"⚠️ step3: {e}")
 
+        # 6. Create Cloud Run
         if status_msg: await status_msg.edit_text(f"🚀 جاري التنفيذ... [6/8] إنشاء Cloud Run {flag}")
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
@@ -103,8 +170,10 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             err_str = str(e)
             if "service_already_exists" in err_str:
                 return await handle_error("service_already_exists")
-            return await handle_error("step4_failed", err_str[:200])
+            else:
+                return await handle_error("step4_failed", err_str[:200])
 
+        # 7. Get URL
         if status_msg: await status_msg.edit_text("🚀 جاري التنفيذ... [7/8] انتظار الرابط")
         try:
             final_url = await console.step5_get_deployed_url(page)

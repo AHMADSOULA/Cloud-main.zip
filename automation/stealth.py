@@ -1,11 +1,16 @@
 STEALTH_JS = r"""
+// 1. webdriver
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+// 2. languages + platform
 Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
 Object.defineProperty(navigator, 'platform', { get: () => 'Win32' });
 Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
 Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
 Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
 Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.' });
+
+// 3. plugins
 Object.defineProperty(navigator, 'plugins', {
     get: () => {
         const plugins = [
@@ -19,13 +24,38 @@ Object.defineProperty(navigator, 'plugins', {
         return plugins;
     }
 });
+
+// 4. WebGL
 const getParameter = WebGLRenderingContext.prototype.getParameter;
 WebGLRenderingContext.prototype.getParameter = function(parameter) {
     if (parameter === 37445) return 'Intel Inc.';
     if (parameter === 37446) return 'Intel Iris OpenGL Engine';
     return getParameter.call(this, parameter);
 };
-window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: { isInstalled: false } };
+
+// 5. chrome runtime
+window.chrome = { 
+    runtime: {},
+    loadTimes: function() {}, 
+    csi: function() {}, 
+    app: { isInstalled: false } 
+};
+
+// 6. screen
 Object.defineProperty(screen, 'width', { get: () => 1920 });
 Object.defineProperty(screen, 'height', { get: () => 1080 });
+Object.defineProperty(screen, 'availWidth', { get: () => 1920 });
+Object.defineProperty(screen, 'availHeight', { get: () => 1040 });
+
+// 7. Permissions (Google uses this to detect headless)
+const originalQuery = window.navigator.permissions.query;
+window.navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications' ?
+        Promise.resolve({ state: Notification.permission }) :
+        originalQuery(parameters)
+);
+
+// 8. Hairline features
+Object.defineProperty(document, 'hidden', { get: () => false });
+Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
 """

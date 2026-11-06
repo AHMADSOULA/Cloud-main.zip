@@ -102,7 +102,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cost > 0 and not is_admin(user.id):
             await db.update_points(user.id, -cost)
         
-        # ✅ بدا النشر بلا رسالة
         asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, container['image'], update.effective_message, context, cost))
         return
 
@@ -174,7 +173,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cost > 0 and not is_admin(user.id):
             await db.update_points(user.id, -cost)
         
-        # ✅ بدا النشر بلا رسالة
         default_image = "docker.io/ajndjd2/ahmed-vip1"
         asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, default_image, query.message, context, cost))
 
@@ -197,7 +195,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if cost > 0 and not is_admin(user.id):
             await db.update_points(user.id, -cost)
         
-        # ✅ بدا النشر بلا رسالة
         asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, container['image'], query.message, context, cost))
 
     elif data == "admin_panel":
@@ -258,7 +255,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        # ✅ هنا كنبداو العملية بلا ما نصيفطو شي رسالة
         result = await run_sso_flow(ctx, sso_url, image=image, sender=msg, user_tag="user")
         
         if result.get("success"):

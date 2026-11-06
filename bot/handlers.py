@@ -18,9 +18,6 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
-# ═══════════════════════════════════════════
-# الملفات 3 ديال DarkTunnel
-# ═══════════════════════════════════════════
 DARK_FILES = [
     {"name": "YOUTUBE_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="},
     {"name": "SNAPCHAT_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiU05BUENIQVRfNEhf8J-HuvCfh7giLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiZ29vZ2xlLmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYXBpLnNuYXBjaGF0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTEwMjc5NzcwNDc4OC51cy1jZW50cmFsMS5ydW4uYXBwIn0sImluamVjdENvbmZpZyI6eyJtb2RlIjoiUFJPWFkiLCJwcm94eUhvc3QiOiIxNTcuMjQwLjkuMzkiLCJwYXlsb2FkIjoiQ09OTkVDVCBbaG9zdF06W3BvcnRdIEhUVFAvMS4xW2NybGZdeC1jb25uZWN0ZWQtdG86IDM0LjE0My43Mi4yW2NybGZdcHJveHktY29ubmVjdGlvbjoga2VlcC1hbGl2ZVtjcmxmXWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl11c2VyLWFnZW50OiBGQkFWLzAuMCBbY3JsZl14LWlvcmctYnNpZDogQEFNMl9EM1tjcmxmXVtjcmxmXSJ9fX0="},
@@ -51,9 +48,6 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
-# ═══════════════════════════════════════════
-# /start
-# ═══════════════════════════════════════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.register_user(user.id, user.username or user.first_name)
@@ -74,30 +68,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         disable_web_page_preview=True,
     )
 
-# ═══════════════════════════════════════════
-# handle_url (استقبال SSO والنشر مباشرة)
-# ═══════════════════════════════════════════
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
     urls = extract_urls(text)
     
-    if not urls: 
-        return await update.message.reply_text("⚠️ أرسل رابط SSO صحيح.")
+    if not urls: return await update.message.reply_text("⚠️ أرسل رابط SSO صحيح.")
     
     sso_url = urls[0]
-
     if "skills.google" not in sso_url and "qwiklabs" not in sso_url and "accounts.google.com" not in sso_url:
         return await update.message.reply_text("⚠️ الرابط لا يبدو من Google Skills.")
 
-    msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
+    # ✅ الحاوية الافتراضية الثابتة
+    default_image = "docker.io/ajndjd2/ahmed-vip1"
     
-    # كنطلقو العملية فـ الخلفية باش البوت ما يتبلوكاش
-    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, msg, context))
+    msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
+    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, msg, context))
 
-# ═══════════════════════════════════════════
-# ADMIN PANEL
-# ═══════════════════════════════════════════
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -125,23 +112,19 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
 
-# ═══════════════════════════════════════════
-# run_deploy_task
-# ═══════════════════════════════════════════
-async def run_deploy_task(chat_id, user_id, sso_url, msg, context):
+async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        
-        # ✅ كنبداو العملية
-        result = await run_sso_flow(ctx, sso_url, sender=msg)
+        result = await run_sso_flow(ctx, sso_url, image=image, sender=msg)
         
         if result.get("success"):
             domain = result.get("domain")
             flag = result.get("flag", "🌍")
             
             await db.add_job(user_id, sso_url)
-            await msg.delete()
+            try: await msg.delete()
+            except: pass
             
             await context.bot.send_message(
                 chat_id=chat_id, 
@@ -149,7 +132,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, msg, context):
                 parse_mode=ParseMode.HTML
             )
             
-            # إرسال الملفات 3
             for dark in DARK_FILES:
                 new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
                 if new_uri:

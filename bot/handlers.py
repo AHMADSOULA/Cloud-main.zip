@@ -18,9 +18,6 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
-# ═══════════════════════════════════════════
-# DARK FILES
-# ═══════════════════════════════════════════
 DARK_FILES = [
     {"name": "YOUTUBE_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="},
     {"name": "SNAPCHAT_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiU05BUENIQVRfNEhf8J-HuvCfh7giLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiZ29vZ2xlLmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYXBpLnNuYXBjaGF0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTEwMjc5NzcwNDc4OC51cy1jZW50cmFsMS5ydW4uYXBwIn0sImluamVjdENvbmZpZyI6eyJtb2RlIjoiUFJPWFkiLCJwcm94eUhvc3QiOiIxNTcuMjQwLjkuMzkiLCJwYXlsb2FkIjoiQ09OTkVDVCBbaG9zdF06W3BvcnRdIEhUVFAvMS4xW2NybGZdeC1jb25uZWN0ZWQtdG86IDM0LjE0My43Mi4yW2NybGZdcHJveHktY29ubmVjdGlvbjoga2VlcC1hbGl2ZVtjcmxmXWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl11c2VyLWFnZW50OiBGQkFWLzAuMCBbY3JsZl14LWlvcmctYnNpZDogQEFNMl9EM1tjcmxmXVtjcmxmXSJ9fX0="},
@@ -52,24 +49,45 @@ def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
 # ═══════════════════════════════════════════
-# /start (بداية التفاعل)
+# /start (مع نظام الدعوات)
 # ═══════════════════════════════════════════
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    await db.register_user(user.id, user.username or user.first_name)
-    u = await db.get_user(user.id)
     
+    # ✅ التحقق من رابط الدعوة
+    inviter_id = None
+    if context.args and len(context.args) > 0:
+        try:
+            inviter_id = int(context.args[0])
+        except:
+            pass
+
+    is_new = await db.is_user_new(user.id)
+    await db.register_user(user.id, user.username or user.first_name)
+    
+    # ✅ إذا كان مستخدم جديد ودخل عبر رابط دعوة
+    if is_new and inviter_id and inviter_id != user.id:
+        success = await db.add_invite(inviter_id, user.id)
+        if success:
+            await db.update_points(inviter_id, 2) # إعطاء نقطتين للداعي
+            try:
+                await context.bot.send_message(
+                    chat_id=inviter_id, 
+                    text="🎉 مبروك! شخص جديد دخل عبر رابط الدعوة ديالك، تمت إضافة **2 نقطة** لحسابك.",
+                    parse_mode=ParseMode.MARKDOWN
+                )
+            except:
+                pass
+
+    u = await db.get_user(user.id)
     text = (
-        f"أهلاً بك يا <b>{user.first_name}</b> في <b>Dark Net Developer</b> ☁️✨\n\n"
-        f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
-        f"💳 <b>نقاطك:</b> {u['points']} نقطة\n"
-        f"🚀 <b>عدد النشر:</b> {u['deploy_count']}\n\n"
+        f"أهلاً بك يا <b>{user.first_name}</b> في <b>Cloud Run</b> ☁️✨\n\n"
         f"📥 أرسل رابط Qwiklabs SSO للبدء، أو اختر من القائمة:"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
 
 # ═══════════════════════════════════════════
-# handle_url (استقبال SSO)
+# handle_url
 # ═══════════════════════════════════════════
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -82,10 +100,13 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sso_url = urls[0]
     u = await db.get_user(user.id)
     
-    if u['points'] < 2 and not is_admin(user.id):
-        return await update.message.reply_text("❌ ليس لديك نقاط كافية. كل نشر يكلف 2 نقاط.\nتواصل مع الأدمن لشحن رصيدك.")
+    # ✅ التحقق من النقاط: أول نشر مجاني، الباقي ب3 نقاط
+    cost = 0 if u['deploy_count'] == 0 else 3
+    
+    if cost > 0 and u['points'] < cost and not is_admin(user.id):
+        return await update.message.reply_text(f"❌ ليس لديك نقاط كافية. كل نشر يكلف {cost} نقاط.\nتواصل مع الأدمن لشحن رصيدك.")
 
-    # نحفظو الرابط فالجلسة
+    # حفظ الرابط فالجلسة
     await db.set_session(user.id, state="waiting_container", sso_url=sso_url)
     
     containers = await db.get_user_containers(user.id)
@@ -101,7 +122,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # ═══════════════════════════════════════════
-# button_handler (التفاعل مع الأزرار)
+# button_handler
 # ═══════════════════════════════════════════
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -109,23 +130,36 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     data = query.data
 
-    # ─── الأزرار الأساسية ───
     if data == "back_main":
         u = await db.get_user(user.id)
-        text = (
-            f"أهلاً بك يا <b>{user.first_name}</b> في <b>Dark Net Developer</b> ☁️✨\n\n"
-            f"🆔 <b>ID:</b> <code>{user.id}</code>\n"
-            f"💳 <b>نقاطك:</b> {u['points']} نقطة\n"
-            f"🚀 <b>عدد النشر:</b> {u['deploy_count']}\n\n"
-            f"📥 أرسل رابط QwikLabs SSO للبدء، أو اختر من القائمة:"
-        )
+        text = f"أهلاً بك يا <b>{user.first_name}</b> في <b>Cloud Run</b> ☁️✨\n\n📥 أرسل رابط Qwiklabs SSO للبدء، أو اختر من القائمة:"
         await query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
         
     elif data == "my_account":
+        u = await db.get_user(user.id)
+        # ✅ هنا النص اللي فـ الصورة بالضبط
+        text = (
+            f"👤 حسابي ونظام الدعوات\n\n"
+            f"🌍 نقاطك الحالية: {u['points']} نقطة\n"
+            f"🚀 عمليات النشر الناجحة: {u['deploy_count']}\n\n"
+            f"💡 كيف يعمل النظام؟\n"
+            f"- أول عملية نشر لك مجانية 🎁\n"
+            f"- كل عملية نشر تكلف 3 نقاط.\n"
+            f"- في حال فشل النشر، تُعاد النقاط لحسابك تلقائياً.\n"
+            f"- كل شخص تدعوه عبر رابطك يمنحك نقطتين (2).\n\n"
+            f"🔗 رابط الدعوة الخاص بك:\n"
+            f"<code>https://t.me/cloudrun1_bot?start={user.id}</code>"
+        )
+        await query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
+
+    elif data == "new_deploy":
+        await query.message.edit_text("📥 أرسل رابط Qwiklabs SSO للبدء:")
+
+    elif data == "my_containers":
         containers = await db.get_user_containers(user.id)
-        list_text = "\n".join([f"📦 {c['name']} → `{c['image']}`" for c in containers]) or "لا توجد حاويات."
+        list_text = "\n".join([f"📦 {c['name']} → <code>{c['image']}</code>" for c in containers]) or "لا توجد حاويات."
         await query.message.edit_text(
-            f"👤 <b>حسابك:</b>\n\n{list_text}\n\nيمكنك إدارة حاوياتك:",
+            f"🖌️ <b>حاوياتك الخاصة:</b>\n\n{list_text}\n\nيمكنك إدارة حاوياتك:",
             parse_mode=ParseMode.HTML,
             reply_markup=my_account_menu()
         )
@@ -139,7 +173,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not containers:
             return await query.message.edit_text("❌ لا توجد حاويات للحذف.")
         rows = [[InlineKeyboardButton(f"❌ {c['name']}", callback_data=f"del_{c['id']}")] for c in containers]
-        rows.append([InlineKeyboardButton("🔙 رجوع", callback_data="my_account")])
+        rows.append([InlineKeyboardButton("🔙 رجوع", callback_data="my_containers")])
         await query.message.edit_text("🗑️ اختر الحاوية للحذف:", reply_markup=InlineKeyboardMarkup(rows))
         
     elif data.startswith("del_"):
@@ -147,7 +181,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.delete_container(c_id, user.id)
         await query.message.edit_text("✅ تم حذف الحاوية.", reply_markup=my_account_menu())
 
-    # ─── استعمال الحاوية للنشر ───
     elif data.startswith("use_docker_"):
         c_id = int(data.split("_")[2])
         containers = await db.get_user_containers(user.id)
@@ -161,19 +194,21 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await query.message.edit_text("❌ لم يتم العثور على رابط SSO، أعد إرساله.")
             
         sso_url = session['sso_url']
-        await db.clear_session(user.id) # نمسحو الجلسة
+        await db.clear_session(user.id) 
         
-        # خصم النقاط (إلا ماشي أدمن)
-        if not is_admin(user.id):
-            await db.update_points(user.id, -2)
+        u = await db.get_user(user.id)
+        cost = 0 if u['deploy_count'] == 0 else 3
+        
+        # ✅ خصم النقاط
+        if cost > 0 and not is_admin(user.id):
+            await db.update_points(user.id, -cost)
         
         await query.message.edit_text(
             f"🚀 بدأ النشر باستخدام حاوية: <b>{container['name']}</b>\n⏳ جاري التنفيذ...",
             parse_mode=ParseMode.HTML
         )
         
-        # هنا كنبداو العملية (process_queue)
-        asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, container['image'], query.message, context))
+        asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, container['image'], query.message, context, cost))
 
     # ─── أزرار الأدمن ───
     elif data == "admin_panel":
@@ -185,7 +220,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         users = await db.get_all_users()
         text = "👥 <b>إحصائيات المستخدمين:</b>\n\n"
         for u in users:
-            text += f"🆔 <code>{u['user_id']}</code>\n💳 نقاط: {u['points']} | 🚀 نشر: {u['deploy_count']}\n──────────\n"
+            text += f"🆔 <code>{u['user_id']}</code>\n💳 نقاط: {u['points']} | 🚀 نشر: {u['deploy_count']} | 🤝 دعوات: {u['invites_count']}\n──────────\n"
         await query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=admin_menu())
         
     elif data == "admin_send_points":
@@ -194,14 +229,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.message.edit_text("💳 أرسل <b>ID المستخدم</b> الذي تريد شحنه:", parse_mode=ParseMode.HTML)
 
 # ═══════════════════════════════════════════
-# route_text (استقبال النصوص من المستخدمين)
+# route_text
 # ═══════════════════════════════════════════
 async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
     session = await db.get_session(user.id)
     
-    # 1. إلا كان كيصيفط Docker
     if session and session.get("state") == "waiting_docker_name":
         await db.set_session(user.id, state="waiting_docker_image")
         context.user_data['temp_name'] = text
@@ -213,12 +247,10 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await db.clear_session(user.id)
         return await update.message.reply_text("✅ تم إضافة الحاوية بنجاح.", reply_markup=main_menu(is_admin(user.id)))
 
-    # 2. إلا كان كيصيفط رابط
     if extract_urls(text):
         await handle_url(update, context)
         return
         
-    # 3. إلا كان أدمن كيصيفط ID للنقاط
     if is_admin(user.id) and session and session.get("state") == "admin_waiting_points_id":
         context.user_data['target_id'] = text
         await db.set_session(user.id, state="admin_waiting_points_amount")
@@ -238,9 +270,9 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ أرسل /start للبدء.")
 
 # ═══════════════════════════════════════════
-# run_deploy_task (تشغيل Cloud Run)
+# run_deploy_task
 # ═══════════════════════════════════════════
-async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
+async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
@@ -253,7 +285,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             
             await msg.edit_text(f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
-            # إرسال ملفات dark
             for dark in DARK_FILES:
                 new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
                 if new_uri:
@@ -261,8 +292,16 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
                     bio.name = f"{dark['name']}_{flag} - {domain}.dark"
                     await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
         else:
-            await msg.edit_text(f"❌ <b>فشل النشر:</b>\n{result.get('message')}", parse_mode=ParseMode.HTML)
+            # ✅ استرجاع النقاط عند الفشل
+            if cost > 0 and not is_admin(user_id):
+                await db.update_points(user_id, cost)
+                await msg.edit_text(f"❌ <b>فشل النشر:</b>\n{result.get('message')}\n\n💳 تم إرجاع {cost} نقاط لحسابك.", parse_mode=ParseMode.HTML)
+            else:
+                await msg.edit_text(f"❌ <b>فشل النشر:</b>\n{result.get('message')}", parse_mode=ParseMode.HTML)
+                
     except Exception as e:
-        await msg.edit_text(f"❌ خطأ: {str(e)[:100]}")
+        if cost > 0 and not is_admin(user_id):
+            await db.update_points(user_id, cost)
+        await msg.edit_text(f"❌ خطأ: {str(e)[:100]}\n\n💳 تم إرجاع النقاط لحسابك.", parse_mode=ParseMode.HTML)
     finally:
         await browser.close()

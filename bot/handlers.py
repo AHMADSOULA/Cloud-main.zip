@@ -62,8 +62,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         success = await db.add_invite(inviter_id, user.id)
         if success:
             await db.update_points(inviter_id, 2)
-            try:
-                await context.bot.send_message(chat_id=inviter_id, text="🎉 مبروك! شخص جديد دخل عبر رابط الدعوة ديالك، تمت إضافة **2 نقطة** لحسابك.", parse_mode=ParseMode.MARKDOWN)
+            try: await context.bot.send_message(chat_id=inviter_id, text="🎉 مبروك! شخص جديد دخل عبر رابط الدعوة ديالك، تمت إضافة **2 نقطة** لحسابك.", parse_mode=ParseMode.MARKDOWN)
             except: pass
 
     text = f"أهلاً بك يا <b>{user.first_name}</b> في <b>Cloud Run</b> ☁️✨\n\n📥 أرسل رابط Qwiklabs SSO للبدء، أو اختر من القائمة:"
@@ -86,13 +85,18 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.set_session(user.id, state="waiting_container", sso_url=sso_url)
     containers = await db.get_user_containers(user.id)
     
+    # ✅ التعديل: إلا ماعندوش حاويات، نعرضو ليه زر الحاوية الافتراضية
     if not containers:
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🚀 استخدام حاوية البوت", callback_data="use_default_container")],
+            [InlineKeyboardButton("➕ إضافة حاوية خاصة", callback_data="add_docker")]
+        ])
         return await update.message.reply_text(
-            "⚠️ ليس لديك حاويات (Docker). يرجى إضافة حاوية أولاً.",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ إضافة حاوية", callback_data="add_docker")]])
+            "⚠️ ليس لديك حاويات (Docker) مضافة.\nيمكنك استخدام حاوية البوت الجاهزة للبدء فوراً:",
+            reply_markup=keyboard
         )
         
-    # ✅ التعديل: إلا كانت عندو حاوية وحدة، يبدا النشر ديراكت
+    # ✅ إلا كانت حاوية وحدة، يبدا النشر ديراكت
     if len(containers) == 1:
         container = containers[0]
         await db.clear_session(user.id) 
@@ -155,6 +159,30 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         c_id = int(data.split("_")[1])
         await db.delete_container(c_id, user.id)
         await query.message.edit_text("✅ تم حذف الحاوية.", reply_markup=my_account_menu())
+
+    # ✅ زدنا هاد الـ elif باش نتعاملو مع زر الحاوية الافتراضية
+    elif data == "use_default_container":
+        u = await db.get_user(user.id)
+        cost = 0 if u['deploy_count'] == 0 else 3
+        
+        if cost > 0 and u['points'] < cost and not is_admin(user.id):
+            return await query.message.edit_text("❌ ليس لديك نقاط كافية. كل نشر يكلف 3 نقاط.")
+
+        session = await db.get_session(user.id)
+        if not session or not session.get('sso_url'):
+            return await query.message.edit_text("❌ انتهت الجلسة أو لم يتم العثور على رابط SSO. أعد إرساله.")
+        
+        sso_url = session['sso_url']
+        await db.clear_session(user.id)
+        
+        if cost > 0 and not is_admin(user.id):
+            await db.update_points(user.id, -cost)
+            
+        await query.message.edit_text("🚀 بدأ النشر باستخدام حاوية البوت...\n⏳ جاري التنفيذ...", parse_mode=ParseMode.HTML)
+        
+        # ✅ هنا فين كنمررو الحاوية ديالك
+        default_image = "docker.io/ajndjd2/ahmed-vip1"
+        asyncio.create_task(run_deploy_task(query.message.chat_id, user.id, sso_url, default_image, query.message, context, cost))
 
     elif data.startswith("use_docker_"):
         c_id = int(data.split("_")[2])
@@ -228,8 +256,7 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await db.update_points(target_id, amount)
             await db.clear_session(user.id)
             await update.message.reply_text(f"✅ تم إرسال {amount} نقطة للمستخدم `{target_id}`.", reply_markup=admin_menu())
-        except:
-            await update.message.reply_text("❌ خطأ، أعد المحاولة.")
+        except: await update.message.reply_text("❌ خطأ، أعد المحاولة.")
         return
 
     await update.message.reply_text("ℹ️ أرسل /start للبدء.")
@@ -274,6 +301,10 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                 error_msg = f"لم يتم الوصول للوحة التحكم ❌{refund_text}"
             elif err_code == "invalid_docker_image":
                 error_msg = f"❌ صورة الحاوية (Docker Image) غير صالحة أو غير موجودة.\nتأكد من الرابط أو جرب حاوية أخرى.{refund_text}"
+            elif err_code == "deployment_failed":
+                error_msg = f"❌ فشل النشر (Deployment Failed).\nتأكد من أن الحاوية تعمل بشكل صحيح.{refund_text}"
+            elif err_code == "timeout_waiting_for_url":
+                error_msg = f"❌ انتهى الوقت ولم يتم النشر.\nقد يكون هناك ضغط على السيرفرات.{refund_text}"
             elif err_code == "service_already_exists":
                 error_msg = f"❌ توقف النشر\nيوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
             else:

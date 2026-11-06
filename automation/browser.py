@@ -26,8 +26,6 @@ class StealthBrowser:
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-dev-shm-usage", # ✅ مهم جدا باش ما يطيحش فـ السيرفر
-            "--no-zygote",             # ✅ يقلل من استهلاك الذاكرة
-            "--single-process",        # ✅ كيخلي المتصفح يخدم فـ عملية وحدة
             "--disable-gpu",
             "--disable-software-rasterizer",
             "--disable-accelerated-2d-canvas",
@@ -46,7 +44,7 @@ class StealthBrowser:
             "--hide-scrollbars",
             "--metrics-recording-only",
             "--safebrowsing-disable-auto-update",
-            "--js-flags=--max-old-space-size=512", # ✅ محدودية الذاكرة ديال JS
+            "--js-flags=--max-old-space-size=512", 
             "--window-size=1280,720",
             f"--user-agent={config.USER_AGENT}",
         ]

@@ -92,6 +92,19 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("➕ إضافة حاوية", callback_data="add_docker")]])
         )
         
+    # ✅ التعديل: إلا كانت عندو حاوية وحدة، يبدا النشر ديراكت
+    if len(containers) == 1:
+        container = containers[0]
+        await db.clear_session(user.id) 
+        
+        if cost > 0 and not is_admin(user.id):
+            await db.update_points(user.id, -cost)
+        
+        msg = await update.message.reply_text(f"🚀 جاري النشر تلقائياً باستخدام حاوية: <b>{container['name']}</b>\n⏳ جاري التنفيذ...", parse_mode=ParseMode.HTML)
+        asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, container['image'], msg, context, cost))
+        return
+
+    # إلا كانت كثيرة، كيعرض الأزرار
     await update.message.reply_text("✅ تم استلام الرابط.\nالآن اختر الحاوية التي تريد النشر عليها:", reply_markup=containers_menu(containers))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -259,8 +272,8 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context, cost):
                 error_msg = f"الرابط منتهي ❌{refund_text}"
             elif err_code == "no_dashboard":
                 error_msg = f"لم يتم الوصول للوحة التحكم ❌{refund_text}"
-            elif err_code == "image_field_empty":
-                error_msg = f"❌ فشل إدخال صورة Docker\nجرب حاوية أخرى أو رابط SSO جديد.{refund_text}"
+            elif err_code == "invalid_docker_image":
+                error_msg = f"❌ صورة الحاوية (Docker Image) غير صالحة أو غير موجودة.\nتأكد من الرابط أو جرب حاوية أخرى.{refund_text}"
             elif err_code == "service_already_exists":
                 error_msg = f"❌ توقف النشر\nيوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار حتى تنتهي الخدمة الحالية، أو إرسال رابط SSO جديد.{refund_text}"
             else:

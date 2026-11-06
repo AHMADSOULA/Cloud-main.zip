@@ -132,7 +132,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            # ✅ هنا كنعرضو الرسائل تحت الصورة
             if err_code == "service_already_exists":
                 error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
             elif err_code == "account_deleted":

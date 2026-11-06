@@ -137,7 +137,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     elif data == "my_account":
         u = await db.get_user(user.id)
-        # ✅ هنا النص اللي فـ الصورة بالضبط
+        # ✅ هنا رابط الدعوة باليوزر ديالك
         text = (
             f"👤 حسابي ونظام الدعوات\n\n"
             f"🌍 نقاطك الحالية: {u['points']} نقطة\n"
@@ -148,7 +148,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"- في حال فشل النشر، تُعاد النقاط لحسابك تلقائياً.\n"
             f"- كل شخص تدعوه عبر رابطك يمنحك نقطتين (2).\n\n"
             f"🔗 رابط الدعوة الخاص بك:\n"
-            f"<code>https://t.me/cloudrun1_bot?start={user.id}</code>"
+            f"<code>https://t.me/cloudahmedbot?start={user.id}</code>"
         )
         await query.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=main_menu(is_admin(user.id)))
 

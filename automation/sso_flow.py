@@ -66,14 +66,23 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
         # 2. تسجيل دخول
         await update_msg(1, "loading")
         try:
-            await page.wait_for_url("**/home/dashboard**", timeout=15000) # 15 ثانية فقط للاكتشاف السريع
-        except:
+            # إعطاء وقت كافٍ (45 ثانية) مثل GC.py
+            await page.wait_for_url("**/home/dashboard**", timeout=45000)
+            await update_msg(1, "success")
+        except Exception:
+            # إذا انتهى الوقت، نفحص هل الرابط منتهي فعلاً أم مجرد بطء
             await update_msg(1, "error")
-            raise Exception("EXPIRED_LINK")
+            try:
+                content = await page.content()
+                if "Account deleted" in content or await page.locator("text='Account deleted'").is_visible():
+                    raise Exception("EXPIRED_LINK")
+                else:
+                    raise Exception("LOGIN_TIMEOUT")
+            except:
+                raise Exception("EXPIRED_LINK") # كإجراء احترازي إذا فشل الفحص
             
         current_qs = parse_qs(urlparse(page.url).query)
         authuser = current_qs.get('authuser', ['1'])[0]
-        await update_msg(1, "success")
         
         # 3. موافقة شروط
         await update_msg(2, "loading")
@@ -120,8 +129,9 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
         elif "SERVICE_EXISTS" in err_str:
             return {"success": False, "error": "SERVICE_EXISTS"}
         elif "TIMEOUT_URL" in err_str:
-            await update_msg(6, "error")
             return {"success": False, "error": "SERVICE_EXISTS"}
+        elif "LOGIN_TIMEOUT" in err_str:
+            return {"success": False, "error": "بطء في السيرفر، يرجى إعادة المحاولة"}
         else:
             return {"success": False, "error": "UNKNOWN"}
     finally:

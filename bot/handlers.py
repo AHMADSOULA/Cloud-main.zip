@@ -64,7 +64,6 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     urls = extract_urls(text)
     if urls:
-        # تشغيل بالخلفية باش البوت يبقى سريع
         asyncio.create_task(process_deploy(update, context, urls[0]))
         return
         
@@ -89,20 +88,18 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str, password: str = None):
     user = update.effective_user
     
-    # ✅ رسالة وحدة كتبدل
-    status_msg = await context.bot.send_message(
+    # رسالة الترحيب
+    await context.bot.send_message(
         chat_id=update.effective_chat.id, 
-        text="⏳ يرجى الانتظار دقيقة أو دقائق، سيكتمل نشر الخدمة قريباً..."
+        text="⏳ يرجى الانتظار، سيكتمل النشر في غضون دقيقتين..."
     )
     
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, status_msg, password)
+        # كناديو الدالة اللي كتصور فكل خطوة
+        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, password)
         
-        try: await status_msg.delete()
-        except: pass
-
         if result.get("success"):
             domain = result.get("domain")
             new_uri = build_darktunnel_uri_with_host(domain)
@@ -130,8 +127,6 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
                 await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nالسبب: `{err[:300]}`", parse_mode=ParseMode.MARKDOWN)
                 
     except Exception as e:
-        try: await status_msg.delete()
-        except: pass
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nخطأ: `{str(e)[:300]}`", parse_mode=ParseMode.MARKDOWN)
     finally:
         await browser.close()

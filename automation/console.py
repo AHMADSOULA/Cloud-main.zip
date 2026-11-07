@@ -1,5 +1,4 @@
 import asyncio
-import os
 from playwright.async_api import expect
 from utils.logger import get_logger
 
@@ -33,7 +32,7 @@ class CloudConsole:
             await agree_btn.click()
             await page.wait_for_load_state("domcontentloaded")
         except Exception:
-            log.info("ℹ️ الشروط مابانوش، تخطي تلقائي.")
+            pass
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
@@ -87,7 +86,6 @@ class CloudConsole:
         except Exception as e:
             raise Exception("فشل في ضغط Create")
 
-        # ✅ فحص سريع جدا لخطأ "الخدمة كاينة"
         await page.wait_for_timeout(3000)
         body_text = await page.evaluate("() => document.body.innerText.toLowerCase()")
         if "already exists" in body_text or "service with this name" in body_text:

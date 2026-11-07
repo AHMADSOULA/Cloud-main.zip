@@ -66,41 +66,53 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
 
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
     
+    # ✅ رسالة وحدة كنبدلوها
+    status_msg = await sender.reply_text("⏳ جاري التنفيذ... [0/6]") if sender else None
+
+    async def update_status(step, text=""):
+        if status_msg:
+            try: await status_msg.edit_text(f"⏳ جاري التنفيذ... [{step}/6] {text}")
+            except: pass
+
     page = None
     try:
         page = await context.new_page()
         
         async def handle_error(err_code, extra_msg=""):
-            # مكنمسحوش أي رسالة حيت مكايناش
+            if status_msg:
+                try: await status_msg.delete()
+                except: pass
+            # ✅ تصوير الشاشة فقط عند الخطأ
             if page and not page.is_closed():
-                await console._shot(page) # التصوير عند الخطأ فقط
+                await console._shot(page, extra_msg) 
             return {"success": False, "error": err_code, "message": extra_msg}
 
         # 1
+        await update_status(1, "فتح الرابط")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         await page.wait_for_timeout(2500)
-        await console._shot(page) # ✅ صورة 1
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
         # 2
+        await update_status(2, "TOS")
         try: await console.step1_welcome_screen(page)
         except: pass
         await page.wait_for_timeout(1500)
-        await console._shot(page) # ✅ صورة 2
         
         blocked = await _is_blocked(page)
         if blocked: return await handle_error(blocked)
 
         # 3
+        await update_status(3, "Terms Dialog")
         try: await console.step2_terms_dialog(page)
         except: pass
         await page.wait_for_timeout(1500)
-        await console._shot(page) # ✅ صورة 3
 
         # 4
+        await update_status(4, "Dashboard")
         dashboard_ok = False
         for _ in range(30):
             await page.wait_for_timeout(500)
@@ -110,42 +122,50 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 dashboard_ok = True
                 break
 
-        if not dashboard_ok: return await handle_error("no_dashboard", "❌ ما وصلناش Dashboard")
-        await console._shot(page) # ✅ صورة 4
+        if not dashboard_ok: return await handle_error("no_dashboard", "❌ لم يتم الوصول للوحة التحكم")
 
         authuser = extract_authuser(page.url)
 
         # 5
+        await update_status(5, "تفعيل API")
         try: await console.step3_enable_api(page, project_id, authuser)
         except: pass
         await page.wait_for_timeout(2000)
-        await console._shot(page) # ✅ صورة 5
 
         # 6
+        await update_status(6, "إنشاء الخدمة")
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
             err_str = str(e)
             if "service_already_exists" in err_str:
-                return await handle_error("service_already_exists", "❌ يوجد خدمة تعمل بنفس الاسم.")
+                return await handle_error("service_already_exists", "❌ يوجد خدمة تعمل بنفس الاسم حالياً.")
+            elif "image_field_empty" in err_str:
+                return await handle_error("image_field_empty", "❌ فشل العثور على حقل الحاوية.")
             else:
                 return await handle_error("step4_failed", err_str)
-        await console._shot(page) # ✅ صورة 6
 
         # 7
+        await update_status(6, "انتظار الرابط")
         try:
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
             return await handle_error("timeout_waiting_for_url", str(e))
-        await console._shot(page) # ✅ صورة النجاح
+
+        if status_msg:
+            try: await status_msg.delete()
+            except: pass
 
         return {"success": True, "project_id": project_id, "authuser": authuser, "final_url": final_url, "domain": domain, "region": region, "flag": flag}
 
     except Exception as e:
         log.error(f"❌ خطأ فجائي: {e}")
+        if status_msg:
+            try: await status_msg.delete()
+            except: pass
         if page and not page.is_closed():
-            try: await console._shot(page)
+            try: await console._shot(page, str(e))
             except: pass
         return {"success": False, "error": "unexpected_error", "message": str(e)}
     finally:

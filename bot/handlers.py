@@ -106,14 +106,13 @@ async def _safe_deploy(context, user_id, chat_id, sso_url, password=None):
         await process_deploy(context, user_id, chat_id, sso_url, password=password)
 
 async def process_deploy(context, user_id, chat_id, sso_url, password=None):
-    # 1. إرسال الرسالة الأولى (سيتم تعديلها باستمرار)
     status_msg = await context.bot.send_message(
         chat_id=chat_id, 
         text="✅ تم استلام الرابط. جاري التنفيذ الآن...\n"
     )
     
-    image_uri = "docker.io/ajndjd2/ahmed-vip1" # أو أي صورة تريدها
-    service_name = image_uri.split("/")[-1].split(":")[0] # استخراج اسم الخدمة من الصورة
+    image_uri = "docker.io/ajndjd2/ahmed-vip1" 
+    service_name = image_uri.split("/")[-1].split(":")[0] 
     
     browser = StealthBrowser()
     try:
@@ -126,7 +125,6 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
             elapsed = result.get("time_taken", 0)
             new_uri = build_darktunnel_uri_with_host(domain)
             
-            # 2. رسالة النجاح النهائية (مطابقة للصورة)
             success_text = (
                 f"🎉 تم النشر بنجاح!\n\n"
                 f"🏷️ الخدمة: `{service_name}`\n"
@@ -136,7 +134,6 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
                 f"⚡ الوقت: {elapsed} ثانية"
             )
             
-            # حذف رسالة التحديث وإرسال رسالة النجاح
             try: await status_msg.delete()
             except: pass
             
@@ -164,11 +161,10 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
                 await context.bot.send_message(chat_id=chat_id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا:")
                 return
             else:
-                # إذا حدث خطأ، الرسالة سيتم تعديلها للخطأ من داخل sso_flow،
-                # ولكن هنا نضيف رسالة تفيد بإمكانية إعادة المحاولة
+                # الرابط اللي كيرجع من sso_flow هو السبب الحقيقي
                 await context.bot.send_message(
                     chat_id=chat_id, 
-                    text=f"⏭️ تم تخطي دورك بسبب التجمد.\nيمكنك إرسال الرابط مجدداً."
+                    text=f"⏭️ تم تخطي دورك بسبب التجمد.\nالسبب: {err[:200]}\n\nيمكنك إرسال الرابط مجدداً."
                 )
                 
     except Exception as e:

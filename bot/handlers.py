@@ -160,8 +160,13 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
                 await db.set_session(user_id, sso_url=sso_url, state="waiting_password")
                 await context.bot.send_message(chat_id=chat_id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا:")
                 return
+            elif "SERVICE_EXISTS" in err or "الخدمة موجودة" in err:
+                # الرسالة المطلوبة عند وجود الخدمة
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text="⏭️ تم تخطي دورك بسبب: يوجد خدمة مفعلة بنفس اسم هذه الرابط.\n\nيرجى إرسال رابط SSO جديد."
+                )
             else:
-                # الرابط اللي كيرجع من sso_flow هو السبب الحقيقي
                 await context.bot.send_message(
                     chat_id=chat_id, 
                     text=f"⏭️ تم تخطي دورك بسبب التجمد.\nالسبب: {err[:200]}\n\nيمكنك إرسال الرابط مجدداً."

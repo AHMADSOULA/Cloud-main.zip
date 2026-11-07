@@ -64,7 +64,7 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     urls = extract_urls(text)
     if urls:
-        # ✅ كنطلقو النشر فـ الخلفية باش البوت يبقى سريع
+        # تشغيل بالخلفية باش البوت يبقى سريع
         asyncio.create_task(process_deploy(update, context, urls[0]))
         return
         
@@ -89,7 +89,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str, password: str = None):
     user = update.effective_user
     
-    # ✅ رسالة ترحيبية
+    # ✅ رسالة وحدة كتبدل
     status_msg = await context.bot.send_message(
         chat_id=update.effective_chat.id, 
         text="⏳ يرجى الانتظار دقيقة أو دقائق، سيكتمل نشر الخدمة قريباً..."
@@ -107,7 +107,6 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
             domain = result.get("domain")
             new_uri = build_darktunnel_uri_with_host(domain)
             
-            # ✅ إرسال الرابط
             clean_url = f"https://{domain}"
             await context.bot.send_message(
                 chat_id=update.effective_chat.id, 
@@ -115,7 +114,6 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
                 parse_mode=ParseMode.MARKDOWN
             )
             
-            # ✅ إرسال الملف
             if new_uri:
                 safe_domain = re.sub(r"[^a-z0-9\.\-]+", "_", domain.lower()).strip("_")
                 tg_fname = f"زين و اسيا مجاني - {safe_domain}.dark"

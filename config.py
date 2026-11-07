@@ -15,9 +15,6 @@ class Config:
     PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "60")) * 1000
     NAV_TIMEOUT = int(os.getenv("NAV_TIMEOUT", "120")) * 1000
 
-    # مدة انتظار رابط النشر بالثواني
-    DEPLOY_LINK_TIMEOUT = int(os.getenv("DEPLOY_LINK_TIMEOUT", "120"))
-
     USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"

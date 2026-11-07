@@ -31,7 +31,7 @@ def deploy_cloud_run(project_id: str, access_token: str) -> str:
                     break
                 time.sleep(2)
     except Exception as e:
-        log.warning(f"API Enable warning (maybe already enabled): {e}")
+        log.warning(f"API Enable warning: {e}")
 
     # 2. Create Cloud Run Service
     parent = f"projects/{project_id}/locations/{REGION}"
@@ -47,14 +47,11 @@ def deploy_cloud_run(project_id: str, access_token: str) -> str:
                 "name": f"{SERVICE_NAME}-1",
                 "image": CONTAINER_IMAGE,
                 "ports": [{"name": "http1", "containerPort": CONTAINER_PORT}],
-                "resources": {
-                    "limits": {"cpu": "1", "memory": "512Mi"}
-                }
+                "resources": {"limits": {"cpu": "1", "memory": "512Mi"}}
             }]
         }
     }
 
-    # Create or Update
     response = requests.post(
         f"https://run.googleapis.com/v2/{parent}/services",
         params={"serviceId": SERVICE_NAME},
@@ -62,7 +59,6 @@ def deploy_cloud_run(project_id: str, access_token: str) -> str:
     )
     
     if response.status_code == 409:
-        # Already exists, we update it
         response = requests.patch(
             service_url,
             params={"updateMask": "ingress,invokerIamDisabled,template"},

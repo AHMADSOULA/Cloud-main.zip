@@ -23,6 +23,14 @@ async def init_db():
                 first_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (
+                user_id INTEGER PRIMARY KEY,
+                state TEXT,
+                sso_url TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
         await db.commit()
 
 async def register_user(user_id: int, username: str):
@@ -47,3 +55,24 @@ async def count_jobs():
         cur = await db.execute("SELECT COUNT(*) FROM jobs")
         row = await cur.fetchone()
         return row[0] if row else 0
+
+async def set_session(user_id: int, state: str = None, sso_url: str = None):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        cur = await db.execute("SELECT user_id FROM sessions WHERE user_id=?", (user_id,))
+        if await cur.fetchone():
+            await db.execute("UPDATE sessions SET state=?, sso_url=?, updated_at=CURRENT_TIMESTAMP WHERE user_id=?", (state, sso_url, user_id))
+        else:
+            await db.execute("INSERT INTO sessions (user_id, state, sso_url) VALUES (?, ?, ?)", (user_id, state, sso_url))
+        await db.commit()
+
+async def get_session(user_id: int):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cur = await db.execute("SELECT * FROM sessions WHERE user_id=?", (user_id,))
+        row = await cur.fetchone()
+        return dict(row) if row else None
+
+async def clear_session(user_id: int):
+    async with aiosqlite.connect(config.DB_PATH) as db:
+        await db.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+        await db.commit()

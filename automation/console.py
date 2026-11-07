@@ -39,7 +39,6 @@ class CloudConsole:
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
         await page.goto(api_url, wait_until="domcontentloaded")
         
-        # ✅ زدنا وقت الانتظار باش الصفحة تحمل مزيان
         await page.wait_for_timeout(3000)
         
         enable_btn = page.get_by_role("button", name="Enable")
@@ -54,7 +53,7 @@ class CloudConsole:
             elif await manage_btn.is_visible():
                 pass 
         except Exception as e:
-             # ✅ محاولة احتياطية بـ JS
+             # محاولة احتياطية بالجافاسكريبت
              try:
                  await page.evaluate("""
                      () => {
@@ -69,7 +68,7 @@ class CloudConsole:
              except: pass
              raise Exception(f"عطل في إيجاد زر تفعيل الـ API: {str(e)}")
 
-    async def step4_create_cloud_run(self, page, project_id, authuser):
+    async def step4_create_cloud_run(self, page, project_id, authuser, image):
         log.info("🚀 step4: Create Cloud Run")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
         await page.goto(run_url, wait_until="domcontentloaded")
@@ -80,7 +79,7 @@ class CloudConsole:
             label = page.get_by_text("Container Image URL").first
             await label.click(timeout=15000)
             await page.wait_for_timeout(500)
-            await page.keyboard.type("docker.io/ajndjd2/ahmed-vip1", delay=50)
+            await page.keyboard.type(image, delay=50)
         except Exception as e:
             raise Exception(f"فشل في الضغط وكتابة الرابط: {str(e)}")
         

@@ -11,7 +11,8 @@ class CloudConsole:
         self.bot = bot
         self.chat_id = chat_id
 
-    async def _shot(self, page, caption: str = ""):
+    async def _shot(self, page):
+        """تصوير الشاشة عند وقوع خطأ فقط"""
         if not self.bot or not self.chat_id: return
         try:
             if not page or page.is_closed(): return
@@ -19,7 +20,8 @@ class CloudConsole:
             await page.screenshot(path=path, full_page=True, type="jpeg", quality=60, timeout=5000) 
             with open(path, "rb") as f:
                 try:
-                    await self.bot.send_photo(chat_id=self.chat_id, photo=f, caption=caption[:1000] if caption else "")
+                    # نصيفطو الصورة بوحدها بلا كابسيون
+                    await self.bot.send_photo(chat_id=self.chat_id, photo=f)
                 except Exception as e:
                     log.warning(f"⚠️ فشل إرسال الصورة: {e}")
             try: os.remove(path)
@@ -36,8 +38,7 @@ class CloudConsole:
             button = page.locator("text='I understand'")
             if await button.is_visible(timeout=3000):
                 await button.click()
-        except:
-            pass
+        except: pass
         await page.wait_for_load_state("networkidle")
 
     async def step2_tos_and_country(self, page):
@@ -71,7 +72,7 @@ class CloudConsole:
             elif await manage_btn.is_visible():
                 pass 
         except Exception as e:
-             log.warning(f"⚠️ مشكل فـ API: {str(e)}")
+             raise Exception(f"عطل في إيجاد زر تفعيل الـ API: {str(e)}")
 
     async def step4_create_cloud_run(self, page, project_id, authuser, image, region="europe-west1"):
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
@@ -86,8 +87,7 @@ class CloudConsole:
             await page.wait_for_timeout(500)
             await page.keyboard.type(image, delay=50)
         except Exception as e:
-            log.error(f"❌ فشل في إدخال صورة الدوكر: {e}")
-            raise RuntimeError("image_field_empty")
+            raise Exception(f"فشل في إدخال صورة الحاوية: {str(e)}")
         
         await page.wait_for_timeout(3000)
         
@@ -105,8 +105,7 @@ class CloudConsole:
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=10000)
         except Exception as e:
-            log.error(f"❌ فشل في ضغط Create: {e}")
-            raise RuntimeError("step4_failed")
+            raise Exception(f"فشل في ضغط Create: {str(e)}")
 
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
@@ -115,4 +114,4 @@ class CloudConsole:
             await link_locator.wait_for(state="visible", timeout=120000) 
             return await link_locator.get_attribute("href")
         except Exception as e:
-            raise RuntimeError("timeout_waiting_for_url")
+            raise Exception(f"انتهى وقت الانتظار للرابط: {str(e)}")

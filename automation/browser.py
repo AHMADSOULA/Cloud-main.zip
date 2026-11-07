@@ -20,20 +20,15 @@ class StealthBrowser:
         self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
         log.info(f"📁 Using fresh profile: {self.profile_dir}")
 
-        # ✅ أوامر مستقرة لتقليل الذاكرة ومنع الطيحان بلا ما نستعملو single-process
+        # ✅ إعدادات مستقرة كتمنع الطيحان
         args = [
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-blink-features=AutomationControlled",
             "--disable-infobars",
-            "--disable-dev-shm-usage",      # مهم جداً فـ السيرفر
+            "--disable-dev-shm-usage",
             "--disable-gpu",
-            "--disable-software-rasterizer",
-            "--disable-accelerated-2d-canvas",
-            "--disable-background-timer-throttling",
-            "--disable-renderer-backgrounding",
-            "--disable-backgrounding-occluded-windows",
-            "--js-flags=--max-old-space-size=512", # نحدو الذاكرة ديال JS
+            "--js-flags=--max-old-space-size=512",
             "--window-size=1280,720",
             f"--user-agent={config.USER_AGENT}"
         ]

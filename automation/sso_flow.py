@@ -58,28 +58,38 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
     try:
         page = await context.new_page()
         
-        # 1. فتح رابط
+        # 1. فتح رابط (نفس GC.py)
         await update_msg(0, "loading")
-        await console.step1_welcome_screen(page, sso_url)
+        try:
+            await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
+        except Exception:
+            await page.goto(sso_url, wait_until="commit", timeout=60000)
         await update_msg(0, "success")
         
-        # 2. تسجيل دخول
+        # 2. تسجيل دخول (فحص متزامن وسريع)
         await update_msg(1, "loading")
+        await console.step1_welcome_screen(page)
+        
         try:
-            # إعطاء وقت كافٍ (45 ثانية) مثل GC.py
-            await page.wait_for_url("**/home/dashboard**", timeout=45000)
+            # ننتظر أيهما يظهر أولاً: الداشبورد أو رسالة الحساب المحذوف (أقصى وقت 45 ثانية)
+            dashboard_task = asyncio.create_task(page.wait_for_url("**/home/dashboard**", timeout=45000))
+            deleted_task = asyncio.create_task(page.get_by_text("Account deleted").wait_for(state="visible", timeout=45000))
+            
+            done, pending = await asyncio.wait([dashboard_task, deleted_task], return_when=asyncio.FIRST_COMPLETED)
+            
+            for task in pending:
+                task.cancel()
+                
+            if deleted_task in done and not deleted_task.cancelled():
+                raise Exception("EXPIRED_LINK")
+            
             await update_msg(1, "success")
-        except Exception:
-            # إذا انتهى الوقت، نفحص هل الرابط منتهي فعلاً أم مجرد بطء
+            
+        except Exception as e:
             await update_msg(1, "error")
-            try:
-                content = await page.content()
-                if "Account deleted" in content or await page.locator("text='Account deleted'").is_visible():
-                    raise Exception("EXPIRED_LINK")
-                else:
-                    raise Exception("LOGIN_TIMEOUT")
-            except:
-                raise Exception("EXPIRED_LINK") # كإجراء احترازي إذا فشل الفحص
+            if "EXPIRED_LINK" in str(e):
+                raise e
+            raise Exception("EXPIRED_LINK")
             
         current_qs = parse_qs(urlparse(page.url).query)
         authuser = current_qs.get('authuser', ['1'])[0]
@@ -94,14 +104,10 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
         await console.step3_enable_api(page, project_id, authuser)
         await update_msg(3, "success")
         
-        # 5. تعبئة حقول
+        # 5 & 6. تعبئة حقول و Crater
         await update_msg(4, "loading")
-        await console.step4_fill_fields(page, project_id, authuser, image_uri)
+        await console.step4_create_cloud_run(page, project_id, authuser, image_uri)
         await update_msg(4, "success")
-        
-        # 6. Crater
-        await update_msg(5, "loading")
-        await console.step4_part2_crater(page)
         await update_msg(5, "success")
         
         # 7. انتظار الرابط
@@ -130,8 +136,6 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
             return {"success": False, "error": "SERVICE_EXISTS"}
         elif "TIMEOUT_URL" in err_str:
             return {"success": False, "error": "SERVICE_EXISTS"}
-        elif "LOGIN_TIMEOUT" in err_str:
-            return {"success": False, "error": "بطء في السيرفر، يرجى إعادة المحاولة"}
         else:
             return {"success": False, "error": "UNKNOWN"}
     finally:

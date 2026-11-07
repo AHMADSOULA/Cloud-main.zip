@@ -26,7 +26,6 @@ class CloudConsole:
         log.info("🚀 step2: Terms Dialog")
         agree_btn = page.get_by_role("button", name="Agree and continue")
         try:
-            # كنستناو 5 ثواني، إلا مابانش معناها الحساب ديجا مقبول
             await agree_btn.wait_for(state="visible", timeout=5000)
             
             checkboxes = page.get_by_role("checkbox")

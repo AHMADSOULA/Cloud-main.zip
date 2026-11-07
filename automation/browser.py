@@ -1,6 +1,4 @@
 import os
-import tempfile
-import shutil
 from playwright.async_api import async_playwright
 from config import config
 from automation.stealth import STEALTH_JS
@@ -8,47 +6,64 @@ from utils.logger import get_logger
 
 log = get_logger("Browser")
 
+
 class StealthBrowser:
     def __init__(self):
         self.playwright = None
         self.context = None
-        self.profile_dir = None
 
     async def start(self):
         self.playwright = await async_playwright().start()
-        
-        self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
-        log.info(f"📁 Using fresh profile: {self.profile_dir}")
+        os.makedirs(config.CHROME_PROFILE_DIR, exist_ok=True)
 
-        # ✅ إعدادات مستقرة كتمنع الطيحان
         args = [
+            "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
-            "--disable-blink-features=AutomationControlled",
-            "--disable-infobars",
             "--disable-dev-shm-usage",
             "--disable-gpu",
-            "--js-flags=--max-old-space-size=512",
+            "--disable-software-rasterizer",
+            "--disable-accelerated-2d-canvas",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--disable-infobars",
+            "--disable-extensions",
+            "--disable-plugins",
+            "--disable-sync",
+            "--disable-translate",
+            "--disable-default-apps",
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--mute-audio",
+            "--hide-scrollbars",
+            "--metrics-recording-only",
+            "--safebrowsing-disable-auto-update",
+            "--renderer-process-limit=1",
+            "--js-flags=--max-old-space-size=256",
             "--window-size=1280,720",
-            f"--user-agent={config.USER_AGENT}"
+            f"--user-agent={config.USER_AGENT}",
         ]
 
         self.context = await self.playwright.chromium.launch_persistent_context(
-            user_data_dir=self.profile_dir,
-            channel="chromium",
-            headless=True,
+            user_data_dir=config.CHROME_PROFILE_DIR,
+            headless=config.HEADLESS,
             args=args,
             viewport={"width": 1280, "height": 720},
-            locale="en-US",
-            java_script_enabled=True,
             user_agent=config.USER_AGENT,
+            locale="en-US",
             timezone_id="America/New_York",
             color_scheme="light",
+            java_script_enabled=True,
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+            },
         )
 
         await self.context.add_init_script(STEALTH_JS)
-        self.context.set_default_timeout(60000)
-        self.context.set_default_navigation_timeout(120000)
+
+        self.context.set_default_timeout(config.PAGE_TIMEOUT)
+        self.context.set_default_navigation_timeout(config.NAV_TIMEOUT)
 
         log.info("✅ المتصفح جاهز")
         return self.context
@@ -64,9 +79,4 @@ class StealthBrowser:
                 await self.playwright.stop()
             except Exception:
                 pass
-        
-        if self.profile_dir and os.path.exists(self.profile_dir):
-            try:
-                shutil.rmtree(self.profile_dir, ignore_errors=True)
-            except Exception:
-                pass
+        log.info("تم إغلاق المتصفح")

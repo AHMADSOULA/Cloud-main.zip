@@ -19,6 +19,158 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
+# --- قوالب VLESS و JSON من ملفك القديم ---
+VLESS_TEMPLATE = (
+    "vless://aaaa1111-bbbb-4ccc-8ddd-eeeeffff0000@google.com:443"
+    "?path=%2FTelegram%2F%40AM2_D3%2F%40AHMAD3214&security=tls&encryption=none"
+    "&host={domain}&type=ws&sni={domain}#%40AHMAD3214"
+)
+
+JSON_TEMPLATE = r'''{
+  "dns": {
+    "fallbackStrategy": "disabledIfAnyMatch",
+    "hosts": {},
+    "servers": [
+      {
+        "address": "tcp://8.8.8.8",
+        "fakedns": [
+          {
+            "ipPool": "198.18.0.0/15",
+            "poolSize": 65535
+          }
+        ],
+        "queryStrategy": "UseIPv4"
+      }
+    ]
+  },
+  "inbounds": [
+    {
+      "listen": "0.0.0.0",
+      "port": "1080",
+      "protocol": "dokodemo-door",
+      "settings": {
+        "network": "tcp,udp",
+        "followRedirect": true
+      },
+      "tag": "tun-inbound"
+    },
+    {
+      "listen": "127.0.0.1",
+      "port": "10808",
+      "protocol": "socks",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      },
+      "tag": "socks-inbound"
+    }
+  ],
+  "log": {
+    "loglevel": "warning"
+  },
+  "outbounds": [
+    {
+      "mux": {
+        "enabled": false
+      },
+      "protocol": "vless",
+      "proxySettings": {
+        "tag": "AhMed",
+        "transportLayer": true
+      },
+      "settings": {
+        "vnext": [
+          {
+            "address": "yt3.ggpht.com",
+            "port": 443,
+            "users": [
+              {
+                "encryption": "none",
+                "flow": "",
+                "id": "aaaa1111-bbbb-4ccc-8ddd-eeeeffff0000",
+                "level": 8
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "ws",
+        "security": "tls",
+        "tlsSettings": {
+          "allowInsecure": true,
+          "serverName": "yt3.ggpht.com"
+        },
+        "wsSettings": {
+          "headers": {
+            "Host": "__DOMAIN__"
+          },
+          "path": "/Telegram/@AM2_D3/@AHMAD3214"
+        }
+      },
+      "tag": "VLESS"
+    },
+    {
+      "domainStrategy": "AsIs",
+      "protocol": "http",
+      "settings": {
+        "servers": [
+          {
+            "address": "57.144.120.4",
+            "port": 8080
+          }
+        ],
+        "headers": {
+          "Host": "yt3.ggpht.com:443",
+          "Proxy-Connection": "keep-alive",
+          "User-Agent": "FBAV/0.0",
+          "X-iorg-bsid": "@AM2_D3"
+        }
+      },
+      "tag": "@AM2_D3"
+    },
+    {
+      "protocol": "freedom",
+      "tag": "direct"
+    },
+    {
+      "protocol": "blackhole",
+      "tag": "block"
+    }
+  ],
+  "policy": {
+    "levels": {
+      "8": {
+        "connIdle": 300,
+        "downlinkOnly": 1,
+        "handshake": 4,
+        "uplinkOnly": 1
+      }
+    }
+  },
+  "routing": {
+    "domainStrategy": "AsIs",
+    "rules": [
+      {
+        "outboundTag": "direct",
+        "protocol": [
+          "dns"
+        ],
+        "type": "field"
+      },
+      {
+        "inboundTag": [
+          "tun-inbound",
+          "socks-inbound"
+        ],
+        "outboundTag": "VLESS",
+        "type": "field"
+      }
+    ]
+  }
+}'''
+# -------------------------------------------
+
 DARKTUNNEL_BASE_URI = "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoi2YXYrNin2YbZiiDYp9iz2YrYpyDZiCDYp9ir2YrYsSAiLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiYWx0MTMueXQzLmdncGh0LmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYWx0MTMueXQzLmdncGh0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQxNDAwODYxMjEyMy5ldXJvcGUtd2VzdDEucnVuLmFwcCJ9LCJpbmplY3RDb25maWciOnsiZW5hYmxlZCI6dHJ1ZSwibW9kZSI6IlBST1hZIiwicHJveHlIb3N0IjoiMTU3LjI0MC45LjM5IiwicGF5bG9hZCI6IkNPTk5FQ1QgW2hvc3RdOltwb3J0XSBIVFRQLzEuMVtjcmxmXXgtY29ubmVjdGVkLXRvOiAzNC4xNDMuNzIuMltjcmxmXXByb3h5LWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl1jb25uZWN0aW9uOiBrZWVwLWFsaXZlW2Nyb2ZdeC1pb3JnLWJzaWQ6IEBBTTJfRDNbY3JsZl1bY3JsZl0ifX19"
 
 _user_locks: dict[int, asyncio.Lock] = {}
@@ -111,65 +263,71 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
         text="✅ تم استلام الرابط. جاري التنفيذ الآن...\n"
     )
     
-    image_uri = "docker.io/ajndjd2/ahmed-vip1" 
-    service_name = image_uri.split("/")[-1].split(":")[0] 
-    
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        result = await run_sso_flow(ctx, context.bot, chat_id, sso_url, status_msg, password, image_uri=image_uri)
+        result = await run_sso_flow(ctx, context.bot, chat_id, sso_url, status_msg)
         
+        try: await status_msg.delete()
+        except: pass
+
         if result.get("success"):
             domain = result.get("domain")
             region = result.get("region", "us-central1")
             elapsed = result.get("time_taken", 0)
-            new_uri = build_darktunnel_uri_with_host(domain)
             
+            # 1. رسالة النجاح الأساسية
             success_text = (
-                f"🎉 تم النشر بنجاح!\n\n"
-                f"🏷️ الخدمة: `{service_name}`\n"
-                f"📦 الصورة: `{service_name}`\n"
-                f"🚀 الرابط:\nhttps://{domain}\n"
-                f"📍 المنطقة: `{region}`\n"
-                f"⚡ الوقت: {elapsed} ثانية"
+                f"تم انشاء رابط run.app\n"
+                f"domain:{domain}\n"
+                f"regin:{region}\n"
+                f"مدة التي استقرقة: {elapsed} ثانية"
             )
+            await context.bot.send_message(chat_id, success_text, disable_web_page_preview=True)
             
-            try: await status_msg.delete()
-            except: pass
-            
+            # 2. إرسال VLESS
+            vless_result = VLESS_TEMPLATE.format(domain=domain)
             await context.bot.send_message(
-                chat_id=chat_id, 
-                text=success_text, 
-                parse_mode=ParseMode.MARKDOWN,
-                disable_web_page_preview=True
+                chat_id, 
+                f"🔗 <pre><code class=\"language-java\">{vless_result}</code></pre>", 
+                parse_mode='html'
             )
             
+            # 3. إرسال JSON
+            json_result = JSON_TEMPLATE.replace("__DOMAIN__", domain)
+            await context.bot.send_message(
+                chat_id, 
+                f"📄<pre><code class=\"language-json\">{json_result}</code></pre>", 
+                parse_mode='html'
+            )
+            
+            # 4. إرسال ملف DarkTunnel
+            new_uri = build_darktunnel_uri_with_host(domain)
             if new_uri:
                 safe_domain = re.sub(r"[^a-z0-9\.\-]+", "_", domain.lower()).strip("_")
                 tg_fname = f"زين و اسيا مجاني - {safe_domain}.dark"
                 bio = io.BytesIO(new_uri.encode("utf-8"))
                 bio.name = tg_fname 
                 await context.bot.send_document(chat_id=chat_id, document=bio, filename=tg_fname)
-                
+
+            await db.add_job(user_id, sso_url)
+
         else:
             err = result.get("error", "")
-            if err == "need_password":
-                try: await status_msg.delete()
-                except: pass
-                
-                await db.set_session(user_id, sso_url=sso_url, state="waiting_password")
-                await context.bot.send_message(chat_id=chat_id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا:")
-                return
-            elif "SERVICE_EXISTS" in err or "الخدمة موجودة" in err:
-                # الرسالة المطلوبة عند وجود الخدمة
+            if err == "EXPIRED_LINK":
                 await context.bot.send_message(
-                    chat_id=chat_id, 
-                    text="⏭️ تم تخطي دورك بسبب: يوجد خدمة مفعلة بنفس اسم هذه الرابط.\n\nيرجى إرسال رابط SSO جديد."
+                    chat_id, 
+                    "تم تخطي دورك بسبب: رابط sso. منتهي صلاحية يرجى ارسال رابط sso. جديد"
+                )
+            elif err == "SERVICE_EXISTS":
+                await context.bot.send_message(
+                    chat_id, 
+                    "تم تخطي دورك بسبب: يوجد خدمة بنفس server name يرجى ارسال رابط sso جديد"
                 )
             else:
                 await context.bot.send_message(
-                    chat_id=chat_id, 
-                    text=f"⏭️ تم تخطي دورك بسبب التجمد.\nالسبب: {err[:200]}\n\nيمكنك إرسال الرابط مجدداً."
+                    chat_id, 
+                    f"تم تخطي دورك بسبب خطأ غير متوقع:\n{err[:200]}"
                 )
                 
     except Exception as e:

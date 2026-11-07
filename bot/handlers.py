@@ -4,7 +4,6 @@ import base64
 import json
 import os
 import re
-
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
@@ -20,321 +19,167 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
-
 DARKTUNNEL_BASE_URI = "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoi2YXYrNin2YbZiiDYp9iz2YrYpyDZiCDYp9ir2YrYsSAiLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiYWx0MTMueXQzLmdncGh0LmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYWx0MTMueXQzLmdncGh0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQxNDAwODYxMjEyMy5ldXJvcGUtd2VzdDEucnVuLmFwcCJ9LCJpbmplY3RDb25maWciOnsiZW5hYmxlZCI6dHJ1ZSwibW9kZSI6IlBST1hZIiwicHJveHlIb3N0IjoiMTU3LjI0MC45LjM5IiwicGF5bG9hZCI6IkNPTk5FQ1QgW2hvc3RdOltwb3J0XSBIVFRQLzEuMVtjcmxmXXgtY29ubmVjdGVkLXRvOiAzNC4xNDMuNzIuMltjcmxmXXByb3h5LWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl1jb25uZWN0aW9uOiBrZWVwLWFsaXZlW2Nyb2ZdeC1pb3JnLWJzaWQ6IEBBTTJfRDNbY3JsZl1bY3JsZl0ifX19"
 
+_user_locks: dict[int, asyncio.Lock] = {}
+
+def _get_lock(user_id: int) -> asyncio.Lock:
+    lock = _user_locks.get(user_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_locks[user_id] = lock
+    return lock
 
 def _b64_pad(s: str) -> str:
     return s + ("=" * ((4 - (len(s) % 4)) % 4)) if s else s
 
-
 def build_darktunnel_uri_with_host(new_host: str) -> str:
     try:
-        b64 = _b64_pad(
-            DARKTUNNEL_BASE_URI.split(
-                "darktunnel://",
-                1
-            )[1].strip()
-        )
-
-        data = json.loads(
-            base64.b64decode(
-                b64.encode("utf-8")
-            ).decode("utf-8")
-        )
-
+        b64 = _b64_pad(DARKTUNNEL_BASE_URI.split("darktunnel://", 1)[1].strip())
+        data = json.loads(base64.b64decode(b64.encode("utf-8")).decode("utf-8"))
         stack = [data]
-
         while stack:
             cur = stack.pop()
-
             if isinstance(cur, dict):
-
-                if "wsHeaderHost" in cur:
-                    cur["wsHeaderHost"] = new_host
-
-                stack.extend(
-                    v for v in cur.values()
-                    if isinstance(v, (dict, list))
-                )
-
+                if "wsHeaderHost" in cur: cur["wsHeaderHost"] = new_host
+                stack.extend(v for v in cur.values() if isinstance(v, (dict, list)))
             elif isinstance(cur, list):
-
-                stack.extend(
-                    v for v in cur
-                    if isinstance(v, (dict, list))
-                )
-
-        raw = json.dumps(
-            data,
-            ensure_ascii=False,
-            separators=(",", ":")
-        ).encode("utf-8")
-
-        return (
-            "darktunnel://"
-            + base64.b64encode(raw).decode("utf-8")
-        )
-
+                stack.extend(v for v in cur if isinstance(v, (dict, list)))
+        raw = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return "darktunnel://" + base64.b64encode(raw).decode("utf-8")
     except Exception as e:
-        log.error(
-            f"❌ build_darktunnel: {e}"
-        )
+        log.error(f"❌ build_darktunnel: {e}")
         return None
-
 
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
-
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
-    await db.register_user(
-        user.id,
-        user.username or user.first_name
-    )
-
+    await db.register_user(user.id, user.username or user.first_name)
     if is_admin(user.id):
-
-        await update.message.reply_text(
-            messages.WELCOME_ADMIN,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu(is_admin=True)
-        )
-
+        await update.message.reply_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=True))
     else:
+        await update.message.reply_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=False))
 
-        await update.message.reply_text(
-            messages.WELCOME_USER,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu(is_admin=False)
-        )
-
-
-async def route_text(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
     text = update.message.text or ""
-
+    
     session = await db.get_session(user.id)
-
     if session and session.get("state") == "waiting_password":
         await handle_password(update, context)
         return
 
     urls = extract_urls(text)
-
     if urls:
-        asyncio.create_task(
-            process_deploy(
-                update,
-                context,
-                urls[0]
-            )
-        )
+        user_id = user.id
+        chat_id = update.effective_chat.id
+        sso_url = urls[0]
+        asyncio.create_task(_safe_deploy(context, user_id, chat_id, sso_url))
         return
+        
+    await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
 
-    await update.message.reply_text(
-        "ℹ️ أرسل رابط Qwiklabs SSO للبدء."
-    )
-
-
-async def handle_password(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
-    password = (
-        update.message.text or ""
-    ).strip()
-
-    if not password:
-        return
+    password = (update.message.text or "").strip()
+    if not password: return
 
     session = await db.get_session(user.id)
-
-    if not session or session.get("state") != "waiting_password":
-        return
+    if not session or session.get("state") != "waiting_password": return
 
     sso_url = session.get("sso_url")
-
     await db.clear_session(user.id)
 
-    try:
-        await update.message.delete()
-    except:
-        pass
+    try: await update.message.delete()
+    except: pass
 
-    asyncio.create_task(
-        process_deploy(
-            update,
-            context,
-            sso_url,
-            password=password
-        )
-    )
+    asyncio.create_task(_safe_deploy(context, user.id, update.effective_chat.id, sso_url, password=password))
 
+async def _safe_deploy(context, user_id, chat_id, sso_url, password=None):
+    lock = _get_lock(user_id)
+    if lock.locked():
+        await context.bot.send_message(chat_id=chat_id, text="⏳ عندك عملية نشر جارية، عاود من بعد ما تكمل.")
+        return
+    async with lock:
+        await process_deploy(context, user_id, chat_id, sso_url, password=password)
 
-async def process_deploy(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    sso_url: str,
-    password: str = None
-):
-    user = update.effective_user
-
-    chat_id = update.effective_chat.id
-
-    username = (
-        f"@{user.username}"
-        if user.username
-        else user.first_name
-    )
-
-    # إنشاء رسالة واحدة فقط
+async def process_deploy(context, user_id, chat_id, sso_url, password=None):
+    # 1. إرسال الرسالة الأولى (سيتم تعديلها باستمرار)
     status_msg = await context.bot.send_message(
-        chat_id=chat_id,
-        text="📥 تم استلام الرابط رقم 1 وسيبدأ التنفيذ الآن..."
+        chat_id=chat_id, 
+        text="✅ تم استلام الرابط. جاري التنفيذ الآن...\n"
     )
-
+    
+    image_uri = "docker.io/ajndjd2/ahmed-vip1" # أو أي صورة تريدها
+    service_name = image_uri.split("/")[-1].split(":")[0] # استخراج اسم الخدمة من الصورة
+    
     browser = StealthBrowser()
-
-    browser_closed = False
-
     try:
-
         ctx = await browser.start()
-
-        result = await run_sso_flow(
-            ctx,
-            context.bot,
-            chat_id,
-            sso_url,
-            status_msg,
-            password
-        )
-
-        # إذا انتهى الوقت بدون رابط
-        if result.get("error") == "deployment_timeout":
-
-            await browser.close()
-
-            browser_closed = True
-
-            await status_msg.edit_text(
-                f"{username} ⏰ انتهى الوقت بدون رابط"
-            )
-
-            return
-
-        # إذا نجح النشر
+        result = await run_sso_flow(ctx, context.bot, chat_id, sso_url, status_msg, password, image_uri=image_uri)
+        
         if result.get("success"):
-
             domain = result.get("domain")
-
-            new_uri = build_darktunnel_uri_with_host(
-                domain
+            region = result.get("region", "us-central1")
+            elapsed = result.get("time_taken", 0)
+            new_uri = build_darktunnel_uri_with_host(domain)
+            
+            # 2. رسالة النجاح النهائية (مطابقة للصورة)
+            success_text = (
+                f"🎉 تم النشر بنجاح!\n\n"
+                f"🏷️ الخدمة: `{service_name}`\n"
+                f"📦 الصورة: `{service_name}`\n"
+                f"🚀 الرابط:\nhttps://{domain}\n"
+                f"📍 المنطقة: `{region}`\n"
+                f"⚡ الوقت: {elapsed} ثانية"
             )
-
-            clean_url = f"https://{domain}"
-
-            # تعديل نفس الرسالة إلى رسالة النجاح
-            await status_msg.edit_text(
-                f"✅ تم النشر بنجاح!\n\n"
-                f"🌐 الرابط:\n{clean_url}"
+            
+            # حذف رسالة التحديث وإرسال رسالة النجاح
+            try: await status_msg.delete()
+            except: pass
+            
+            await context.bot.send_message(
+                chat_id=chat_id, 
+                text=success_text, 
+                parse_mode=ParseMode.MARKDOWN,
+                disable_web_page_preview=True
             )
-
+            
             if new_uri:
-
-                safe_domain = re.sub(
-                    r"[^a-z0-9\.\-]+",
-                    "_",
-                    domain.lower()
-                ).strip("_")
-
-                tg_fname = (
-                    f"زين و اسيا مجاني - {safe_domain}.dark"
-                )
-
-                bio = io.BytesIO(
-                    new_uri.encode("utf-8")
-                )
-
-                bio.name = tg_fname
-
-                await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=bio,
-                    filename=tg_fname
-                )
-
+                safe_domain = re.sub(r"[^a-z0-9\.\-]+", "_", domain.lower()).strip("_")
+                tg_fname = f"زين و اسيا مجاني - {safe_domain}.dark"
+                bio = io.BytesIO(new_uri.encode("utf-8"))
+                bio.name = tg_fname 
+                await context.bot.send_document(chat_id=chat_id, document=bio, filename=tg_fname)
+                
         else:
-
             err = result.get("error", "")
-
             if err == "need_password":
-
-                await db.set_session(
-                    user.id,
-                    sso_url=sso_url,
-                    state="waiting_password"
-                )
-
-                await status_msg.edit_text(
-                    "🔑 مطلوب كلمة السر\n\n"
-                    "أرسل كلمة السر هنا:"
-                )
-
+                try: await status_msg.delete()
+                except: pass
+                
+                await db.set_session(user_id, sso_url=sso_url, state="waiting_password")
+                await context.bot.send_message(chat_id=chat_id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا:")
                 return
-
-            await status_msg.edit_text(
-                f"❌ توقف التنفيذ\n"
-                f"السبب: {str(err)[:300]}"
-            )
-
+            else:
+                # إذا حدث خطأ، الرسالة سيتم تعديلها للخطأ من داخل sso_flow،
+                # ولكن هنا نضيف رسالة تفيد بإمكانية إعادة المحاولة
+                await context.bot.send_message(
+                    chat_id=chat_id, 
+                    text=f"⏭️ تم تخطي دورك بسبب التجمد.\nيمكنك إرسال الرابط مجدداً."
+                )
+                
     except Exception as e:
-
-        log.exception(
-            "فشل تنفيذ النشر"
-        )
-
-        try:
-            await status_msg.edit_text(
-                f"❌ توقف التنفيذ\n"
-                f"خطأ: {str(e)[:300]}"
-            )
-
-        except Exception:
-            pass
-
+        try: await status_msg.delete()
+        except: pass
+        await context.bot.send_message(chat_id=chat_id, text=f"❌ توقف الخدمة\nخطأ: `{str(e)[:300]}`", parse_mode=ParseMode.MARKDOWN)
     finally:
+        await browser.close()
 
-        if not browser_closed:
-            await browser.close()
-
-
-async def button_handler(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-
     await query.answer()
-
     if query.data == "back_main":
-
-        await query.message.edit_text(
-            messages.WELCOME_USER,
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=main_menu(
-                is_admin(query.from_user.id)
-            )
-        )
+        await query.message.edit_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin(query.from_user.id)))

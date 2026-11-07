@@ -3,7 +3,7 @@ import tempfile
 import shutil
 from playwright.async_api import async_playwright
 from config import config
-from automation.stealth import STEALTH_JS # ✅ تأكد أن هاد الملف كاين
+from automation.stealth import STEALTH_JS
 from utils.logger import get_logger
 
 log = get_logger("Browser")
@@ -20,34 +20,36 @@ class StealthBrowser:
         self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
         log.info(f"📁 Using fresh profile: {self.profile_dir}")
 
+        # ✅ أعلام لتقليل استهلاك الذاكرة ومنع الطيحان
         args = [
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-blink-features=AutomationControlled",
             "--disable-infobars",
-            "--disable-dev-shm-usage",
-            "--disable-gpu",
-            "--window-size=1920,1080",
-            f"--user-agent={config.USER_AGENT}" # ✅ كنستعملو اليوزر أجنت من config
+            "--disable-dev-shm-usage",      # ✅ مهم جداً: يستعمل /tmp بدل /dev/shm
+            "--disable-gpu",                # ✅ تقليل استهلاك الذاكرة
+            "--disable-software-rasterizer",
+            "--disable-accelerated-2d-canvas",
+            "--no-zygote",
+            "--single-process",            # ✅ يمنع تعدد العمليات ويقلل الذاكرة (قد يقلل الاستقرار ولكن يمنع الطيحان)
+            "--js-flags=--max-old-space-size=512", # ✅ حد أقصى للذاكرة
+            "--window-size=1280,720",      # ✅ تقليل حجم النافذة
+            f"--user-agent={config.USER_AGENT}"
         ]
 
-        # ✅ متصفح مخفي مع تمويه
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
             channel="chromium",
-            headless=True, # ✅ رجعناها True باش ما يتعلقش البوت
+            headless=True,
             args=args,
-            viewport={"width": 1920, "height": 1080},
+            viewport={"width": 1280, "height": 720},
             locale="en-US",
             java_script_enabled=True,
             user_agent=config.USER_AGENT,
             timezone_id="America/New_York",
-            color_scheme="light",
         )
 
-        # ✅ نحقنو كود التمويه باش Google ما تحظرناش
         await self.context.add_init_script(STEALTH_JS)
-
         self.context.set_default_timeout(60000)
         self.context.set_default_navigation_timeout(120000)
 

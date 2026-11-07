@@ -32,7 +32,18 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             try: await status_msg.edit_text(text)
             except: pass
 
-    # ✅ التقاط التوكن من أي طلب
+    # ✅ دالة التصوير
+    async def take_screenshot(caption_text):
+        if not page or page.is_closed(): return
+        try:
+            path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
+            await page.screenshot(path=path, full_page=False, type="jpeg", quality=70, timeout=5000)
+            with open(path, "rb") as f:
+                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption_text)
+            os.remove(path)
+        except Exception as e:
+            log.warning(f"⚠️ فشل إرسال صورة {caption_text}: {e}")
+
     def capture_token(request):
         nonlocal access_token
         if access_token: return
@@ -46,20 +57,22 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
 
     try:
         page = await context.new_page()
-        page.on("request", capture_token) # كنبداو نسمعو من اللول
+        page.on("request", capture_token)
         
-        # 1. الدخول
+        # ✅ الخطوة 1: فتح الرابط
         await update_msg("1) فتح رابط الطالب...")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
-        
-        # 2. الباسورد
-        await update_msg("2) جاري تسجيل الدخول...")
         await page.wait_for_timeout(3000)
+        await take_screenshot("📸 الخطوة 1: فتح الرابط")
+        
+        # ✅ الخطوة 2: تسجيل الدخول / الباسورد
+        await update_msg("2) جاري تسجيل الدخول...")
         try:
             password_input = page.locator('input[type="password"]').first
             if await password_input.is_visible(timeout=3000):
                 if not password:
+                    await take_screenshot("📸 الخطوة 2: يتطلب كلمة سر")
                     return {"success": False, "error": "need_password"}
                 await password_input.fill(password)
                 await page.wait_for_timeout(500)
@@ -67,43 +80,41 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
                 await page.wait_for_timeout(5000)
         except Exception as e:
             log.info(f"تجاوز الباسورد: {e}")
+        await take_screenshot("📸 الخطوة 2: بعد تسجيل الدخول")
 
-        # 3. التوجيهات
+        # ✅ الخطوة 3: التوجيهات (TOS)
         await update_msg("3) قبول التوجيهات...")
         await console.step1_welcome_screen(page)
-        
         try:
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
+        await take_screenshot("📸 الخطوة 3: بعد قبول التوجيهات (TOS)")
 
-        # 4. الشروط
+        # ✅ الخطوة 4: الشروط (Terms)
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
+        await page.wait_for_timeout(2000)
+        await take_screenshot("📸 الخطوة 4: بعد قبول الشروط")
 
-        # 5. استخراج التوكن
-        await update_msg("5) جاري استخراج الـ Token...")
+        # --- استخراج التوكن والنشر ---
+        await update_msg("5) استخراج Token...")
         await page.wait_for_timeout(3000)
-
-        # ✅ الحل النهائي: نجبرو المتصفح يصيفط طلب لـ Google API
+        
         if not access_token:
-            log.info("جاري إجبار المتصفح على إرسال طلب API...")
             try:
                 await page.evaluate("""
                     async () => {
                         try {
-                            // هاد الطلب غادي يجبر المتصفح يستعمل الـ Token ديالو
                             await fetch('https://cloudresourcemanager.googleapis.com/v1/projects', {
                                 headers: { 'Accept': 'application/json' }
                             });
                         } catch (e) {}
                     }
                 """)
-                await page.wait_for_timeout(3000) # نستناو الطلب يتنفذ
-            except Exception as e:
-                log.warning(f"مشكل فـ إجبار المتصفح: {e}")
+                await page.wait_for_timeout(3000)
+            except: pass
 
-        # إلا مازال ما لقيناش التوكن، نجربو من الـ window.gapi
         if not access_token:
             try:
                 access_token = await page.evaluate("""
@@ -116,9 +127,8 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             except: pass
 
         if not access_token:
-            return {"success": False, "error": "❌ فشل استخراج Token. يرجى المحاولة مرة أخرى."}
+            return {"success": False, "error": "❌ فشل استخراج Token."}
 
-        # 6. النشر
         await update_msg("6) جاري النشر عبر API...")
         final_url = await asyncio.to_thread(deploy_cloud_run, project_id, access_token)
         domain = extract_domain_from_service_url(final_url)
@@ -128,17 +138,8 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
     except Exception as e:
         err_str = str(e)
         log.error(f"❌ خطأ: {err_str}")
-        
         if page and not page.is_closed():
-            try:
-                await page.wait_for_timeout(2000)
-                path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
-                await page.screenshot(path=path, full_page=True, type="jpeg", quality=60, timeout=5000)
-                with open(path, "rb") as f:
-                    await bot.send_photo(chat_id=chat_id, photo=f)
-                os.remove(path)
-            except: pass
-            
+            await take_screenshot(f"📸 تفاصيل الخطأ: {err_str[:100]}")
         return {"success": False, "error": err_str}
     finally:
         if page:

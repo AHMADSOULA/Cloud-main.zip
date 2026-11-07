@@ -26,8 +26,8 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
     console = CloudConsole(context)
     page = None
     start_time = time.time()
+    current_step = "البداية"
 
-    # قائمة لتخزين الخطوات وعرضها في رسالة واحدة
     steps_log = ["✅ تم استلام الرابط. جاري التنفيذ الآن...\n"]
 
     async def update_msg(new_step_text=None, replace_last=False, is_final=False):
@@ -41,33 +41,39 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             try: 
                 await status_msg.edit_text(full_text)
             except Exception: 
-                pass # تجاهل خطأ عدم تغيير النص
+                pass
 
-    async def take_screenshot(caption_text):
+    async def take_screenshot(reason_text):
         if not page or page.is_closed(): return
         try:
             path = f"/tmp/shot_{int(time.time()*1000)}.jpg"
-            await page.screenshot(path=path, full_page=True, type="jpeg", quality=60, timeout=5000)
+            # full_page=False باش ما يتقلش التصوير ويضرب timeout فـ GCP
+            await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=15000)
             with open(path, "rb") as f:
-                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption_text[:1000])
+                await bot.send_photo(chat_id=chat_id, photo=f, caption=reason_text[:1000])
             os.remove(path)
         except Exception as e:
             log.warning(f"⚠️ فشل إرسال صورة: {e}")
+            # إلا فشل التصوير، نبعثو رسالة للمستخدم
+            try:
+                await bot.send_message(chat_id=chat_id, text=f"⚠️ فشل تصوير الشاشة: {str(e)[:100]}")
+            except: pass
 
     try:
         page = await context.new_page()
         
         # 1. فتح الرابط
+        current_step = "1) فتح رابط الطالب"
         await update_msg("1) فتح رابط الطالب...")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         
-        # التحقق من وجود خطأ "Account deleted"
-        if "Account deleted" in await page.content() or "الحساب محذوف" in await page.content():
+        if "Account deleted" in await page.content():
             await update_msg("1) فتح رابط الطالب ❌", replace_last=True)
-            raise Exception("Account deleted")
+            raise Exception("الحساب محذوف (Account deleted)")
 
         # 2. الباسورد
+        current_step = "2) تسجيل الدخول"
         await update_msg("2) جاري تسجيل الدخول...")
         await page.wait_for_timeout(3000)
         try:
@@ -85,6 +91,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             await update_msg("2 ✅", replace_last=True)
 
         # 3. التوجيهات والداشبورد
+        current_step = "3) قبول التوجيهات"
         await update_msg("3) قبول التوجيهات...")
         await console.step1_welcome_screen(page)
         
@@ -97,16 +104,19 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         await update_msg(f"3 ✅ (Project: {project_id})", replace_last=True)
 
         # 4. الشروط
+        current_step = "4) قبول الشروط"
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
         await update_msg("4 ✅", replace_last=True)
 
         # 5. تفعيل API
+        current_step = "5) تفعيل Cloud Run API"
         await update_msg("5) تفعيل Cloud Run API...")
         await console.step3_enable_api(page, project_id, authuser)
         await update_msg("5 ⚠️ API مؤكد، متابعة...", replace_last=True)
 
-        # 6. إنشاء الخدمة
+        # 6. فتح Cloud Run
+        current_step = "6) فتح Cloud Run"
         await update_msg("6) فتح Cloud Run...")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
         await page.goto(run_url, wait_until="domcontentloaded")
@@ -114,11 +124,13 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         await update_msg("6 ✅", replace_last=True)
         
         # 7. تعبئة الحقول
+        current_step = "7) تعبئة الحقول"
         await update_msg("7) تعبئة الحقول...")
         await console.step4_create_cloud_run(page, project_id, authuser, image_uri)
         await update_msg("7 ✅", replace_last=True)
 
         # 8. انتظار الرابط
+        current_step = "8) انتظار رابط النشر"
         await update_msg("8) انتظار رابط النشر...")
         final_url = await console.step5_get_deployed_url(page)
         await update_msg("8 ✅ Create", replace_last=True)
@@ -126,29 +138,26 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         domain = extract_domain_from_service_url(final_url)
         elapsed_time = int(time.time() - start_time)
         
-        # استخراج المنطقة (الافتراضي us-central1 إذا لم نجدها)
         region = "us-central1"
         if "-" in domain:
             parts = domain.split("-")
             if len(parts) > 2: region = f"{parts[-2]}-{parts[-1]}"
 
-        return {
-            "success": True, 
-            "domain": domain, 
-            "region": region, 
-            "time_taken": elapsed_time
-        }
+        return {"success": True, "domain": domain, "region": region, "time_taken": elapsed_time}
 
     except Exception as e:
         err_str = str(e)
-        log.error(f"❌ خطأ: {err_str}")
+        log.error(f"❌ خطأ في {current_step}: {err_str}")
         
-        # تنسيق رسالة الفشل (التجمد)
-        await update_msg(f"⚠️ تجمد في مرحلة unknown", is_final=True)
+        # تحديث الرسالة بالمرحلة اللي تجمد فيها
+        await update_msg(f"⚠️ تجمد في مرحلة: {current_step}", is_final=True)
+        
+        # تصوير الشاشة وإرسال السبب
         if page and not page.is_closed():
-            await take_screenshot(f"⚠️ تجمد في: {err_str[:100]}")
+            await take_screenshot(f"❌ سبب التجمد:\n{err_str[:500]}\n\n📍 المرحلة: {current_step}")
         
-        return {"success": False, "error": "unknown"}
+        # نرجعو السبب الحقيقي
+        return {"success": False, "error": err_str}
     finally:
         if page:
             try: await page.close()

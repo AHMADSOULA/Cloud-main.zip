@@ -127,13 +127,20 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
                 bio.name = f"{DARK_FILE_YOUTUBE['name']} - {domain}.dark"
                 await context.bot.send_document(chat_id=update.effective_chat.id, document=bio, filename=bio.name)
         else:
-            # رسالة التوقف (الصورة تصيفطات من sso_flow)
-            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ توقف الخدمة\nحدث مشكل أثناء التنفيذ.")
+            err = result.get("error", "")
+            if "account_deleted" in err:
+                error_msg = "❌ الحساب محذوف (Account Deleted).\nيرجى إرسال رابط SSO جديد."
+            elif "service_already_exists" in err:
+                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً."
+            else:
+                error_msg = f"❌ توقف الخدمة\nالسبب: `{err[:300]}`"
+                
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
                 
     except Exception as e:
         try: await status_msg.delete()
         except: pass
-        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ توقف الخدمة\nحدث خطأ غير متوقع.")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nخطأ غير متوقع: `{str(e)[:300]}`")
     finally:
         await browser.close()
 

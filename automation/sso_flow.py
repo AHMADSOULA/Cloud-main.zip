@@ -32,41 +32,33 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             try: await status_msg.edit_text(text)
             except: pass
 
-    # ✅ دالة التقاط الـ Token
-    def capture_token(request):
+    # ✅ التقاط التوكن من الشبكة
+    def handle_request(request):
         nonlocal access_token
-        if access_token:
-            return
-        try:
-            headers = request.headers
-            auth = headers.get("authorization") or headers.get("Authorization")
+        if access_token: return
+        if "googleapis.com" in request.url or "console.cloud.google.com" in request.url:
+            auth = request.headers.get("authorization") or request.headers.get("Authorization")
             if auth and auth.startswith("Bearer "):
                 access_token = auth.replace("Bearer ", "").strip()
                 log.info("✅ تم التقاط الـ Token من الشبكة!")
-        except Exception:
-            pass
 
     try:
         page = await context.new_page()
-        # ✅ نبداو نسمعو للطلبات من اللول
-        page.on("request", capture_token)
+        page.on("request", handle_request) # ✅ كنبداو نسمعو من اللول
         
-        # 1. تسجيل الدخول
+        # 1. الدخول
         await update_msg("1) فتح رابط الطالب...")
-        try: 
-            await page.goto(sso_url, wait_until="networkidle", timeout=60000)
-        except: 
-            await page.goto(sso_url, wait_until="commit", timeout=60000)
+        try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
+        except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         
+        # 2. الباسورد
+        await update_msg("2) جاري تسجيل الدخول...")
         await page.wait_for_timeout(3000)
-        
         try:
             password_input = page.locator('input[type="password"]').first
             if await password_input.is_visible(timeout=3000):
                 if not password:
                     return {"success": False, "error": "need_password"}
-                
-                await update_msg("2) إدخال كلمة السر...")
                 await password_input.fill(password)
                 await page.wait_for_timeout(500)
                 await page.keyboard.press("Enter")
@@ -74,6 +66,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         except Exception as e:
             log.info(f"تجاوز الباسورد: {e}")
 
+        # 3. التوجيهات
         await update_msg("3) قبول التوجيهات...")
         await console.step1_welcome_screen(page)
         
@@ -82,33 +75,44 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
 
+        # 4. الشروط
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
 
-        # ✅ نعطيو شوية وقت للداشبورد باش يصيفط طلبات الـ API ويبان الـ Token
-        await update_msg("5) جاري استخراج الـ Token...")
-        await page.wait_for_timeout(5000)
+        # 5. استخراج التوكن (محاولة قوية)
+        await update_msg("5) استخراج بيانات الدخول...")
+        await page.wait_for_timeout(5000) # ✅ نعطيو 5 ثواني للداشبورد باش يحمل مزيان
 
-        # ✅ إلا ما لقيناش الـ Token من الشبكة، نجربو نجيبوه من المتصفح ديراكت
         if not access_token:
-            log.info("محاولة استخراج الـ Token من داخل المتصفح...")
+            # محاولة قراءة التوكن مباشرة من المتصفح
             try:
                 access_token = await page.evaluate("""
-                    () => {
-                        try { return window.gapi.auth.getToken().access_token; } catch(e) {}
-                        try { return window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token; } catch(e) {}
+                    async () => {
+                        try {
+                            if (window.gapi && window.gapi.auth) {
+                                const auth = window.gapi.auth.getToken();
+                                if (auth && auth.access_token) return auth.access_token;
+                            }
+                        } catch(e) {}
+                        try {
+                            if (window.gapi && window.gapi.auth2) {
+                                const auth2 = window.gapi.auth2.getAuthInstance();
+                                if (auth2 && auth2.currentUser.get()) {
+                                    const auth = auth2.currentUser.get().getAuthResponse();
+                                    if (auth && auth.access_token) return auth.access_token;
+                                }
+                            }
+                        } catch(e) {}
                         return null;
                     }
                 """)
-            except:
-                pass
+            except: pass
 
         if not access_token:
-            return {"success": False, "error": "❌ فشل استخراج Token. يرجى المحاولة مرة أخرى أو التأكد من الحساب."}
+            return {"success": False, "error": "❌ فشل استخراج Token. يرجى المحاولة مرة أخرى."}
 
-        # ✅ 6. النشر عبر API
-        await update_msg("6) جاري النشر عبر Google API...")
-        
+        # 6. النشر
+        await update_msg("6) جاري النشر عبر API...")
         final_url = await asyncio.to_thread(deploy_cloud_run, project_id, access_token)
         domain = extract_domain_from_service_url(final_url)
 
@@ -117,8 +121,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
     except Exception as e:
         err_str = str(e)
         log.error(f"❌ خطأ: {err_str}")
-        
-        if page and not page.is_closed() and "Execution context was destroyed" not in err_str:
+        if page and not page.is_closed():
             try:
                 await page.wait_for_timeout(2000)
                 path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
@@ -127,10 +130,6 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
                     await bot.send_photo(chat_id=chat_id, photo=f)
                 os.remove(path)
             except: pass
-            
-        if "Execution context was destroyed" in err_str:
-            err_str = "❌ حدث تحويل مفاجئ في الصفحة. يرجى إعادة المحاولة."
-            
         return {"success": False, "error": err_str}
     finally:
         if page:

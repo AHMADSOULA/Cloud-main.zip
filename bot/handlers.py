@@ -3,7 +3,7 @@ import io
 import base64
 import json
 import os
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
@@ -18,6 +18,9 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
+# ═══════════════════════════════════════════
+# 3 ملفات DarkTunnel
+# ═══════════════════════════════════════════
 DARK_FILES = [
     {"name": "YOUTUBE_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="},
     {"name": "SNAPCHAT_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiU05BUENIQVRfNEhf8J-HuvCfh7giLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiZ29vZ2xlLmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYXBpLnNuYXBjaGF0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTEwMjc5NzcwNDc4OC51cy1jZW50cmFsMS5ydW4uYXBwIn0sImluamVjdENvbmZpZyI6eyJtb2RlIjoiUFJPWFkiLCJwcm94eUhvc3QiOiIxNTcuMjQwLjkuMzkiLCJwYXlsb2FkIjoiQ09OTkVDVCBbaG9zdF06W3BvcnRdIEhUVFAvMS4xW2NybGZdeC1jb25uZWN0ZWQtdG86IDM0LjE0My43Mi4yW2NybGZdcHJveHktY29ubmVjdGlvbjoga2VlcC1hbGl2ZVtjcmxmXWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl11c2VyLWFnZW50OiBGQkFWLzAuMCBbY3JsZl14LWlvcmctYnNpZDogQEFNMl9EM1tjcmxmXVtjcmxmXSJ9fX0="},
@@ -69,7 +72,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "skills.google" not in sso_url and "qwiklabs" not in sso_url and "accounts.google.com" not in sso_url:
         return await update.message.reply_text("⚠️ الرابط لا يبدو من Google Skills.")
 
+    # ✅ الحاوية الثابتة
     default_image = "docker.io/ajndjd2/ahmed-vip1"
+    
     msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
     asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, msg, context))
 
@@ -115,6 +120,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             
             await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
+            # ✅ إرسال 3 ملفات dark
             for dark in DARK_FILES:
                 try:
                     new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
@@ -132,16 +138,12 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            if err_code == "service_already_exists":
-                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
-            elif err_code == "account_deleted":
-                error_msg = "❌ الحساب محذوف (Account Deleted).\nيرجى إرسال رابط SSO جديد."
-            elif err_code == "invalid_docker_image": 
-                error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
-            elif err_code == "image_field_empty": 
-                error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
-            elif err_code == "browser_crashed":
-                error_msg = "❌ المتصفح طاح (Browser Crashed).\nيرجى إعادة المحاولة برابط جديد."
+            if err_code == "step4_failed": 
+                error_msg = f"❌ فشل إنشاء Cloud Run.\n{detail}"
+            elif err_code == "step3_failed":
+                error_msg = f"❌ فشل تفعيل API.\n{detail}"
+            elif err_code == "step5_failed":
+                error_msg = "❌ انتهى وقت الانتظار ولم يتم العثور على الرابط."
             else: 
                 error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
                 

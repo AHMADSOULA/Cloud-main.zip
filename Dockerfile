@@ -1,18 +1,18 @@
 FROM mcr.microsoft.com/playwright/python:v1.48.0-jammy
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
 
-# ✅ تركيب xvfb باش نقدرو نخدمو headless=False
-RUN apt-get update && apt-get install -y xvfb && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /tmp/logs /tmp/chrome_profile
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+RUN playwright install chromium
 
 COPY . .
 
-# ✅ تشغيل البوت داخل شاشة وهمية (مهم جداً)
-CMD ["xvfb-run", "-a", "python", "main.py"]
+CMD ["python", "main.py"]

@@ -47,6 +47,13 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
+# ✅ هادي دالة كتحدد واش الرابط ديراكت AddSession بلا google_sso
+def is_direct_addsession(url: str) -> bool:
+    u = (url or "").lower()
+    if "accounts.google.com/addsession" in u and "skills.google" not in u and "google_sso" not in u:
+        return True
+    return False
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.register_user(user.id, user.username or user.first_name)
@@ -76,8 +83,8 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
 
-    # إلا كان الرابط ديال addsession ومفيهش الباسورد
-    if "addsession" in sso_url.lower() and "password=" not in sso_url.lower():
+    # ✅ التعديل: كنسقسيو على كلمة السر غير إلا كان الرابط ديراكت addsession
+    if is_direct_addsession(sso_url) and "password=" not in sso_url.lower():
         await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
         return await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
 
@@ -95,10 +102,9 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sso_url = session.get("sso_url")
     await db.clear_session(user.id)
 
-    try: await update.message.delete() # نمسحو رسالة كلمة السر
+    try: await update.message.delete()
     except: pass
 
-    # نزيدو كلمة السر للرابط
     if "Password=" not in sso_url:
         sep = "&" if "?" in sso_url else "?"
         sso_url = f"{sso_url}{sep}Password={password}"
@@ -108,16 +114,13 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
     
-    # ✅ كنصيفطو رسالة الخطوات اللولة
     status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ جاري التنفيذ... [0/6]")
     
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        # كنبداو العملية
         result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
         
-        # كنسحبو الرسالة ديال الخطوات ملي يكمل
         try: await status_msg.delete()
         except: pass
 

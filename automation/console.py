@@ -12,7 +12,7 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        """تصوير الشاشة وإرسالها (بلا كابسيون)"""
+        """تصوير الشاشة وإرسالها (بلا كابسيون إلا طلبنا)"""
         if not self.sender: return
         try:
             if not page or page.is_closed(): return
@@ -21,8 +21,7 @@ class CloudConsole:
             with open(path, "rb") as f:
                 try:
                     bot = self.sender.get_bot()
-                    # ✅ نصيفطو الصورة بلا كابسيون (بلا رسالة تحتها)
-                    await bot.send_photo(chat_id=self.sender.chat_id, photo=f)
+                    await bot.send_photo(chat_id=self.sender.chat_id, photo=f, caption=caption[:1000] if caption else "")
                 except Exception as e:
                     log.warning(f"⚠️ فشل إرسال الصورة: {e}")
             try: os.remove(path)

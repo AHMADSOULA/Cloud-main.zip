@@ -32,19 +32,21 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             try: await status_msg.edit_text(text)
             except: pass
 
-    # ✅ التقاط التوكن من الشبكة
-    def handle_request(request):
+    # ✅ التقاط التوكن من أي طلب
+    def capture_token(request):
         nonlocal access_token
         if access_token: return
-        if "googleapis.com" in request.url or "console.cloud.google.com" in request.url:
+        try:
             auth = request.headers.get("authorization") or request.headers.get("Authorization")
             if auth and auth.startswith("Bearer "):
                 access_token = auth.replace("Bearer ", "").strip()
-                log.info("✅ تم التقاط الـ Token من الشبكة!")
+                log.info("✅ تم التقاط الـ Token بنجاح!")
+        except Exception:
+            pass
 
     try:
         page = await context.new_page()
-        page.on("request", handle_request) # ✅ كنبداو نسمعو من اللول
+        page.on("request", capture_token) # كنبداو نسمعو من اللول
         
         # 1. الدخول
         await update_msg("1) فتح رابط الطالب...")
@@ -79,30 +81,35 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
 
-        # 5. استخراج التوكن (محاولة قوية)
-        await update_msg("5) استخراج بيانات الدخول...")
-        await page.wait_for_timeout(5000) # ✅ نعطيو 5 ثواني للداشبورد باش يحمل مزيان
+        # 5. استخراج التوكن
+        await update_msg("5) جاري استخراج الـ Token...")
+        await page.wait_for_timeout(3000)
 
+        # ✅ الحل النهائي: نجبرو المتصفح يصيفط طلب لـ Google API
         if not access_token:
-            # محاولة قراءة التوكن مباشرة من المتصفح
+            log.info("جاري إجبار المتصفح على إرسال طلب API...")
             try:
-                access_token = await page.evaluate("""
+                await page.evaluate("""
                     async () => {
                         try {
-                            if (window.gapi && window.gapi.auth) {
-                                const auth = window.gapi.auth.getToken();
-                                if (auth && auth.access_token) return auth.access_token;
-                            }
-                        } catch(e) {}
-                        try {
-                            if (window.gapi && window.gapi.auth2) {
-                                const auth2 = window.gapi.auth2.getAuthInstance();
-                                if (auth2 && auth2.currentUser.get()) {
-                                    const auth = auth2.currentUser.get().getAuthResponse();
-                                    if (auth && auth.access_token) return auth.access_token;
-                                }
-                            }
-                        } catch(e) {}
+                            // هاد الطلب غادي يجبر المتصفح يستعمل الـ Token ديالو
+                            await fetch('https://cloudresourcemanager.googleapis.com/v1/projects', {
+                                headers: { 'Accept': 'application/json' }
+                            });
+                        } catch (e) {}
+                    }
+                """)
+                await page.wait_for_timeout(3000) # نستناو الطلب يتنفذ
+            except Exception as e:
+                log.warning(f"مشكل فـ إجبار المتصفح: {e}")
+
+        # إلا مازال ما لقيناش التوكن، نجربو من الـ window.gapi
+        if not access_token:
+            try:
+                access_token = await page.evaluate("""
+                    () => {
+                        try { return window.gapi.auth.getToken().access_token; } catch(e) {}
+                        try { return window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token; } catch(e) {}
                         return null;
                     }
                 """)
@@ -121,6 +128,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
     except Exception as e:
         err_str = str(e)
         log.error(f"❌ خطأ: {err_str}")
+        
         if page and not page.is_closed():
             try:
                 await page.wait_for_timeout(2000)
@@ -130,6 +138,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
                     await bot.send_photo(chat_id=chat_id, photo=f)
                 os.remove(path)
             except: pass
+            
         return {"success": False, "error": err_str}
     finally:
         if page:

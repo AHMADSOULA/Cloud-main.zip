@@ -9,41 +9,37 @@ class CloudConsole:
         self.context = context
 
     async def step1_welcome_screen(self, page, sso_url):
-        # فحص سريع لصفحة الخطأ (رابط منتهي)
         try:
-            await page.goto(sso_url, wait_until="domcontentloaded", timeout=30000)
-            await page.wait_for_timeout(2000)
+            # استخدام نفس وقت GC.py (60 ثانية)
+            await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
+        except Exception:
+            # إذا فشل التحميل الأول، نحاول مرة أخرى بطريقة أسرع
+            await page.goto(sso_url, wait_until="commit", timeout=60000)
             
-            # إذا ظهرت كلمة Account deleted أو لم يوجهنا لجوجل
-            if "Account deleted" in await page.content() or await page.locator("text='Account deleted'").is_visible():
-                raise Exception("EXPIRED_LINK")
-                
-        except Exception as e:
-            if "EXPIRED_LINK" in str(e):
-                raise e
-            raise Exception(f"EXPIRED_LINK")
-
+        await page.wait_for_timeout(2000)
         await page.keyboard.press("Enter")
+        
         try:
             button = page.locator("text='I understand'")
-            if await button.is_visible(timeout=2000):
+            if await button.is_visible(timeout=3000):
                 await button.click()
         except Exception:
             pass
+        await page.wait_for_load_state("networkidle")
 
     async def step2_tos_and_country(self, page):
         agree_btn = page.get_by_role("button", name="Agree and continue")
         try:
-            await agree_btn.wait_for(state="visible", timeout=5000) # سرعة في الاكتشاف
+            await agree_btn.wait_for(state="visible", timeout=10000)
             checkboxes = page.get_by_role("checkbox")
             if await checkboxes.count() >= 2:
                 await checkboxes.nth(0).click()
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(1)
                 await checkboxes.nth(1).click()
             await agree_btn.click()
             await page.wait_for_load_state("domcontentloaded")
         except Exception:
-            pass # تخطي إذا لم تظهر
+            pass
 
     async def step3_enable_api(self, page, project_id, authuser):
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
@@ -54,7 +50,7 @@ class CloudConsole:
         disable_btn = page.get_by_text("Disable API") 
         
         try:
-            await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=10000)
+            await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=15000)
             if await enable_btn.is_visible():
                 await enable_btn.click()
                 await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
@@ -64,42 +60,41 @@ class CloudConsole:
     async def step4_fill_fields(self, page, project_id, authuser, image):
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
         await page.goto(run_url, wait_until="domcontentloaded")
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(5000)
         
         try:
             label = page.get_by_text("Container Image URL").first
-            await label.wait_for(state="visible", timeout=10000)
+            await label.wait_for(state="visible", timeout=15000)
             await label.click()
             await page.wait_for_timeout(500)
-            await page.keyboard.type(image, delay=30)
+            await page.keyboard.type(image, delay=50)
         except Exception as e:
             raise Exception(f"فشل تعبئة الحقول: {str(e)[:50]}")
         
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(3000)
 
     async def step4_part2_crater(self, page):
         try:
-            await page.get_by_role("radio", name="Allow public access").click(timeout=5000)
-            await page.get_by_role("radio", name="Instance-based").click(timeout=5000)
+            await page.get_by_role("radio", name="Allow public access").click(timeout=8000)
+            await page.get_by_role("radio", name="Instance-based").click(timeout=8000)
             try:
-                await page.get_by_role("button", name="Hide").click(timeout=1500)
+                await page.get_by_role("button", name="Hide").click(timeout=2000)
             except Exception:
                 pass
             await page.keyboard.press("End")
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(1000)
             
             create_btn = page.get_by_role("button", name="Create")
-            await create_btn.click(force=True, timeout=10000)
+            await create_btn.click(force=True, timeout=15000)
             
-            # اكتشاف سريع لخطأ "الخدمة موجودة" (ننتظر 3 ثواني فقط)
+            # فحص خطأ "الخدمة موجودة" (نعطيه 4 ثواني للظهور)
             try:
                 error_msg = page.get_by_text("Service with this name already exists")
-                await error_msg.wait_for(state="visible", timeout=3000)
+                await error_msg.wait_for(state="visible", timeout=4000)
                 raise Exception("SERVICE_EXISTS")
             except Exception as e:
                 if "SERVICE_EXISTS" in str(e):
                     raise e
-                # إذا انتهى الوقت ولم تظهر الرسالة، فهذا يعني أنه نجح
         except Exception as e:
             if "SERVICE_EXISTS" in str(e):
                 raise e

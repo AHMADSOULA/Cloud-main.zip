@@ -1,3 +1,4 @@
+
 import asyncio
 import io
 import base64
@@ -63,7 +64,6 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not urls: return await update.message.reply_text("⚠️ أرسل رابط SSO صحيح.")
     sso_url = urls[0]
 
-    # ✅ إذا كان الرابط ما فيهش كلمة السر، نسجلو ونطلبوها
     if "addsession" in sso_url.lower() and "password=" not in sso_url.lower():
         await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
         return await update.message.reply_text("🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
@@ -81,7 +81,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sso_url = session.get("sso_url")
     await db.clear_session(user.id)
 
-    try: await update.message.delete() # نمسحو كلمة السر من الشات
+    try: await update.message.delete()
     except: pass
 
     if "Password=" not in sso_url:
@@ -92,15 +92,15 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
-    # ✅ رسالة وحدة كتبدل
-    status_msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
+    
+    # ✅ التعديل المهم: كنستعملو context.bot.send_message بدل update.message.reply_text
+    status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ جاري التنفيذ... [0/6]")
     
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
         result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
         
-        # ✅ نمسحو الرسالة دايما ملي يكمل
         try: await status_msg.delete()
         except: pass
 

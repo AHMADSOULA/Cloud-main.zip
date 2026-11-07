@@ -27,7 +27,6 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
     page = None
     start_time = time.time()
     
-    # قائمة الخطوات السبع المطلوبة
     steps = [
         "فتح رابط",
         "تسجيل دخول",
@@ -39,7 +38,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
     ]
     
     async def update_msg(step_idx, status="loading"):
-        lines = ["✅ تم استلام الرابط. جاري التنفيذ الآن...\n"]
+        lines = ["⏳ جاري التنفيذ...\n"]
         for i, s in enumerate(steps):
             if i < step_idx:
                 lines.append(f"{s} ✅")
@@ -56,36 +55,18 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
         except Exception:
             pass
 
-    async def take_screenshot(caption):
-        if not page or page.is_closed(): return
-        try:
-            path = f"/tmp/shot_{int(time.time()*1000)}.jpg"
-            await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=10000)
-            with open(path, "rb") as f:
-                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption[:1000])
-            os.remove(path)
-        except Exception as e:
-            log.warning(f"⚠️ فشل إرسال صورة: {e}")
-
     try:
         page = await context.new_page()
         
         # 1. فتح رابط
         await update_msg(0, "loading")
-        try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
-        except: await page.goto(sso_url, wait_until="commit", timeout=60000)
-        await page.wait_for_timeout(2000)
-        
-        if "Account deleted" in await page.content() or await page.locator("text='Account deleted'").is_visible():
-            await update_msg(0, "error")
-            raise Exception("EXPIRED_LINK")
+        await console.step1_welcome_screen(page, sso_url)
         await update_msg(0, "success")
         
         # 2. تسجيل دخول
         await update_msg(1, "loading")
-        await console.step1_welcome_screen(page)
         try:
-            await page.wait_for_url("**/home/dashboard**", timeout=45000)
+            await page.wait_for_url("**/home/dashboard**", timeout=15000) # 15 ثانية فقط للاكتشاف السريع
         except:
             await update_msg(1, "error")
             raise Exception("EXPIRED_LINK")
@@ -135,17 +116,13 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
         log.error(f"❌ خطأ: {err_str}")
         
         if "EXPIRED_LINK" in err_str:
-            await take_screenshot("❌ رابط SSO منتهي الصلاحية")
             return {"success": False, "error": "EXPIRED_LINK"}
         elif "SERVICE_EXISTS" in err_str:
-            await take_screenshot("❌ يوجد خدمة مفعلة بنفس الاسم")
             return {"success": False, "error": "SERVICE_EXISTS"}
         elif "TIMEOUT_URL" in err_str:
             await update_msg(6, "error")
-            await take_screenshot("❌ انتهى وقت الانتظار لرابط run.app")
             return {"success": False, "error": "SERVICE_EXISTS"}
         else:
-            await take_screenshot(f"❌ خطأ غير متوقع:\n{err_str[:300]}")
             return {"success": False, "error": "UNKNOWN"}
     finally:
         if page:

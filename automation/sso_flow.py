@@ -25,7 +25,6 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, password=None):
     console = CloudConsole(context)
     page = None
 
-    # ✅ دالة التصوير فكل خطوة
     async def send_step_photo(page, step_name):
         if not page or page.is_closed(): return
         try:
@@ -62,7 +61,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, password=None):
         # 3. التوجيهات والداشبورد
         await console.step1_welcome_screen(page)
         try:
-            await page.wait_for_url("**/home/dashboard**", timeout=30000) # سرعنا
+            await page.wait_for_url("**/home/dashboard**", timeout=30000)
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
         
@@ -78,7 +77,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, password=None):
         await console.step3_enable_api(page, project_id, authuser)
         await send_step_photo(page, "4: تفعيل API")
 
-        # 6. إنشاء الخدمة
+        # 6. إنشاء الخدمة (مع إعادة محاولة)
         await console.step4_create_cloud_run(page, project_id, authuser, "docker.io/ajndjd2/ahmed-vip1")
         await send_step_photo(page, "5: إنشاء الخدمة")
 

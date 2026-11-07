@@ -18,11 +18,11 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
-DARK_FILES = [
-    {"name": "YOUTUBE_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="},
-    {"name": "SNAPCHAT_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiU05BUENIQVRfNEhf8J-HuvCfh7giLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiZ29vZ2xlLmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYXBpLnNuYXBjaGF0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTEwMjc5NzcwNDc4OC51cy1jZW50cmFsMS5ydW4uYXBwIn0sImluamVjdENvbmZpZyI6eyJtb2RlIjoiUFJPWFkiLCJwcm94eUhvc3QiOiIxNTcuMjQwLjkuMzkiLCJwYXlsb2FkIjoiQ09OTkVDVCBbaG9zdF06W3BvcnRdIEhUVFAvMS4xW2NybGZdeC1jb25uZWN0ZWQtdG86IDM0LjE0My43Mi4yW2NybGZdcHJveHktY29ubmVjdGlvbjoga2VlcC1hbGl2ZVtjcmxmXWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl11c2VyLWFnZW50OiBGQkFWLzAuMCBbY3JsZl14LWlvcmctYnNpZDogQEFNMl9EM1tjcmxmXVtjcmxmXSJ9fX0="},
-    {"name": "FREE_4H", "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiRlJFRV80SF_wn4e68J-HuCIsInZsZXNzVHVubmVsQ29uZmlnIjp7InYycmF5Q29uZmlnIjp7Imhvc3QiOiJhbHQxMy55dDMuZ2dwaHQuY29tIiwicG9ydCI6NDQzLCJ1dWlkIjoiYWFhYTExMTEtYmJiYi00Y2NjLThkZGQtZWVlZWZmZmYwMDAwIiwic2VydmVyTmFtZUluZGljYXRpb24iOiJhbHQxMy55dDMuZ2dwaHQuY29tIiwid3NQYXRoIjoiL1RlbGVncmFtL0BBTTJfRDMvQEFITUFEMzIxNCJ9LCJpbmplY3RDb25maWciOnsiZW5hYmxlZCI6dHJ1ZSwibW9kZSI6IlBST1hZIiwicHJveHlIb3N0IjoiMTU3LjI0MC45LjM5IiwicGF5bG9hZCI6IkNPTk5FQ1QgW2hvc3RdOltwb3J0XSBIVFRQLzEuMVtjcmxmXXgtY29ubmVjdGVkLXRvOiAzNC4xNDMuNzIuMltjcmxmXXByb3h5LWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl1jb25uZWN0aW9uOiBrZWVwLWFsaXZlW2Nyb2ZdeC1pb3JnLWJzaWQ6IEBBTTJfRDNbY3JsZl1bY3JsZl0ifX19"}
-]
+# ✅ غير ملف Youtube
+DARK_FILE_YOUTUBE = {
+    "name": "YOUTUBE_4H", 
+    "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="
+}
 
 def _b64_pad(s: str) -> str:
     return s + ("=" * ((4 - (len(s) % 4)) % 4)) if s else s
@@ -71,7 +71,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     default_image = "docker.io/ajndjd2/ahmed-vip1"
     
-    # ✅ بدا التنفيذ فـ صمت (بلا رسالة ترحيبية)، كنمررو update.message باش يقدر يصور
+    # ✅ بدا التنفيذ فـ صمت (بلا رسالة ترحيبية)
     asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, update.effective_message, context))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,23 +111,25 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             flag = result.get("flag", "🌍")
             await db.add_job(user_id, sso_url)
             
-            await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
+            # ✅ إرسال الرابط بلا http
+            clean_url = result['final_url'].replace("https://", "").replace("http://", "")
+            await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{clean_url}</code>", parse_mode=ParseMode.HTML)
             
-            # ✅ إرسال 3 ملفات dark
-            for dark in DARK_FILES:
-                try:
-                    new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
-                    if new_uri:
-                        bio = io.BytesIO(new_uri.encode("utf-8"))
-                        bio.name = f"{dark['name']}_{flag} - {domain}.dark"
-                        await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
-                except Exception as file_err:
-                    log.error(f"❌ فشل إرسال ملف {dark['name']}: {file_err}")
+            # ✅ إرسال ملف Youtube فقط
+            try:
+                new_uri = build_darktunnel_uri_with_host(DARK_FILE_YOUTUBE["uri"], domain)
+                if new_uri:
+                    bio = io.BytesIO(new_uri.encode("utf-8"))
+                    bio.name = f"{DARK_FILE_YOUTUBE['name']}_{flag} - {domain}.dark"
+                    await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
+            except Exception as file_err:
+                log.error(f"❌ فشل إرسال ملف Youtube: {file_err}")
                     
         else:
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
+            # ✅ هنا كنعرضو الرسائل اللي كتجي تحت الصورة اللي تصيفطات من sso_flow
             if err_code == "service_already_exists":
                 error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
             elif err_code == "account_deleted":
@@ -136,6 +138,8 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
                 error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
             elif err_code == "image_field_empty": 
                 error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
+            elif err_code == "browser_crashed":
+                error_msg = "❌ المتصفح طاح (Browser Crashed).\nيرجى إعادة المحاولة برابط جديد."
             else: 
                 error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
                 

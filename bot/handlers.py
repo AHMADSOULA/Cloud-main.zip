@@ -47,6 +47,12 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
+def is_direct_addsession(url: str) -> bool:
+    u = (url or "").lower()
+    if "accounts.google.com/addsession" in u and "skills.google" not in u and "google_sso" not in u:
+        return True
+    return False
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.register_user(user.id, user.username or user.first_name)
@@ -59,11 +65,13 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
     
+    # ✅ 1. إلا كان المستخدم كيصيفط كلمة السر
     session = await db.get_session(user.id)
     if session and session.get("state") == "waiting_password":
         await handle_password(update, context)
         return
 
+    # ✅ 2. إلا كان رابط
     urls = extract_urls(text)
     if urls:
         await handle_url(update, context, urls[0])
@@ -72,6 +80,13 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
+    user = update.effective_user
+
+    # ✅ إلا كان الرابط ديال addsession ومفيهش الباسورد، كنسولوه قبل ما يبدا المتصفح
+    if is_direct_addsession(sso_url) and "password=" not in sso_url.lower():
+        await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
+        return await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
+
     await process_deploy(update, context, sso_url)
 
 async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,17 +103,22 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await update.message.delete()
     except: pass
 
-    await process_deploy(update, context, sso_url, password=password)
+    if "Password=" not in sso_url:
+        sep = "&" if "?" in sso_url else "?"
+        sso_url = f"{sso_url}{sep}Password={password}"
 
-async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str, password: str = None):
+    await process_deploy(update, context, sso_url)
+
+async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
     status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ جاري التنفيذ... [0/6]")
     
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg, password=password)
+        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
         
+        # نمسحو رسالة الخطوات دايما
         try: await status_msg.delete()
         except: pass
 
@@ -111,18 +131,10 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
                 await context.bot.send_document(chat_id=update.effective_chat.id, document=bio, filename=bio.name)
         else:
             err = result.get("error", "")
-            if err == "need_password":
-                await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
-                return
-            elif err == "wrong_password":
-                await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ كلمة السر غير صحيحة.\nيرجى إرسال كلمة السر (Password) الصحيحة:")
-                return
-            elif "account_deleted" in err:
-                error_msg = "❌ الحساب محذوف (Account Deleted).\nيرجى إرسال رابط SSO جديد."
-            elif "service_already_exists" in err:
+            if "service_already_exists" in err:
                 error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً."
+            elif "account_deleted" in err:
+                error_msg = "❌ الحساب محذوف (Account Deleted)."
             else:
                 error_msg = f"❌ توقف الخدمة\nالسبب: `{err[:300]}`"
                 

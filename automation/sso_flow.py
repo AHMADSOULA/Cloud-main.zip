@@ -22,16 +22,19 @@ def _has_password(url: str) -> bool:
 async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_msg=None) -> dict:
     project_id = extract_project_id(sso_url)
     if not project_id:
-        return {"success": False, "error": "invalid_link", "message": "❌ Project ID غير موجود."}
+        return {"success": False, "error": "❌ Project ID في الرابط."}
 
     region = "us-central1" if _has_password(sso_url) else "europe-west1"
     
     console = CloudConsole(context)
     page = None
+    current_step = "البداية"
 
     async def update_status(step, text=""):
+        nonlocal current_step
+        current_step = f"[{step}/6] {text}"
         if status_msg:
-            try: await status_msg.edit_text(f"⏳ جاري التنفيذ... [{step}/6] {text}")
+            try: await status_msg.edit_text(f"⏳ جاري التنفيذ... {current_step}")
             except: pass
 
     try:
@@ -64,7 +67,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
 
         # 5
         await update_status(5, "إنشاء الخدمة")
-        await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
+        await console.step4_create_cloud_run(page, project_id, authuser, image)
 
         # 6
         await update_status(6, "انتظار الرابط")
@@ -74,7 +77,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
         return {"success": True, "domain": domain}
 
     except Exception as e:
-        log.error(f"❌ فشل في الخطوة: {e}")
+        log.error(f"❌ فشل في الخطوة {current_step}: {e}")
         # التصوير عند الخطأ فقط
         if page and not page.is_closed():
             try:

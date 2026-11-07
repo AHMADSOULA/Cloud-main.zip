@@ -1,6 +1,6 @@
 """
 automation/browser.py
-- headless=True (بلا Xvfb)
+- headless=True for Cloud Run
 """
 import os
 from playwright.async_api import async_playwright
@@ -35,7 +35,7 @@ class StealthBrowser:
 
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=config.CHROME_PROFILE_DIR,
-            headless=True,  # ✅ مهم — بلا Xvfb
+            headless=True,
             args=args,
             viewport={"width": 1280, "height": 720},
             user_agent=config.USER_AGENT,

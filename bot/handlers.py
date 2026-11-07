@@ -19,7 +19,6 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
-# --- قوالب VLESS و JSON من ملفك القديم ---
 VLESS_TEMPLATE = (
     "vless://aaaa1111-bbbb-4ccc-8ddd-eeeeffff0000@google.com:443"
     "?path=%2FTelegram%2F%40AM2_D3%2F%40AHMAD3214&security=tls&encryption=none"
@@ -169,7 +168,6 @@ JSON_TEMPLATE = r'''{
     ]
   }
 }'''
-# -------------------------------------------
 
 DARKTUNNEL_BASE_URI = "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoi2YXYrNin2YbZiiDYp9iz2YrYpyDZiCDYp9ir2YrYsSAiLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiYWx0MTMueXQzLmdncGh0LmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYWx0MTMueXQzLmdncGh0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQxNDAwODYxMjEyMy5ldXJvcGUtd2VzdDEucnVuLmFwcCJ9LCJpbmplY3RDb25maWciOnsiZW5hYmxlZCI6dHJ1ZSwibW9kZSI6IlBST1hZIiwicHJveHlIb3N0IjoiMTU3LjI0MC45LjM5IiwicGF5bG9hZCI6IkNPTk5FQ1QgW2hvc3RdOltwb3J0XSBIVFRQLzEuMVtjcmxmXXgtY29ubmVjdGVkLXRvOiAzNC4xNDMuNzIuMltjcmxmXXByb3h5LWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl1jb25uZWN0aW9uOiBrZWVwLWFsaXZlW2Nyb2ZdeC1pb3JnLWJzaWQ6IEBBTTJfRDNbY3JsZl1bY3JsZl0ifX19"
 
@@ -258,6 +256,7 @@ async def _safe_deploy(context, user_id, chat_id, sso_url, password=None):
         await process_deploy(context, user_id, chat_id, sso_url, password=password)
 
 async def process_deploy(context, user_id, chat_id, sso_url, password=None):
+    # إرسال الرسالة الأولى التي ستتحدث
     status_msg = await context.bot.send_message(
         chat_id=chat_id, 
         text="✅ تم استلام الرابط. جاري التنفيذ الآن...\n"
@@ -268,6 +267,7 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
         ctx = await browser.start()
         result = await run_sso_flow(ctx, context.bot, chat_id, sso_url, status_msg)
         
+        # حذف الرسالة المتحركة
         try: await status_msg.delete()
         except: pass
 
@@ -276,7 +276,7 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
             region = result.get("region", "us-central1")
             elapsed = result.get("time_taken", 0)
             
-            # 1. رسالة النجاح الأساسية
+            # رسالة النجاح
             success_text = (
                 f"تم انشاء رابط run.app\n"
                 f"domain:{domain}\n"
@@ -285,7 +285,7 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
             )
             await context.bot.send_message(chat_id, success_text, disable_web_page_preview=True)
             
-            # 2. إرسال VLESS
+            # إرسال VLESS
             vless_result = VLESS_TEMPLATE.format(domain=domain)
             await context.bot.send_message(
                 chat_id, 
@@ -293,7 +293,7 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
                 parse_mode='html'
             )
             
-            # 3. إرسال JSON
+            # إرسال JSON
             json_result = JSON_TEMPLATE.replace("__DOMAIN__", domain)
             await context.bot.send_message(
                 chat_id, 
@@ -301,7 +301,7 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
                 parse_mode='html'
             )
             
-            # 4. إرسال ملف DarkTunnel
+            # إرسال ملف DarkTunnel
             new_uri = build_darktunnel_uri_with_host(domain)
             if new_uri:
                 safe_domain = re.sub(r"[^a-z0-9\.\-]+", "_", domain.lower()).strip("_")

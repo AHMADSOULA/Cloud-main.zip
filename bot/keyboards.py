@@ -12,8 +12,6 @@ def main_menu(is_admin: bool = False):
 
 def admin_menu():
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔐 تحويل SSH", callback_data="admin_convert_ssh")],
-        [InlineKeyboardButton("📊 سحب حسابات Ooredoo", callback_data="admin_ooredoo")],
         [InlineKeyboardButton("📊 إحصائيات بوت", callback_data="admin_stats")],
         [InlineKeyboardButton("👥 مستخدمين حالياً", callback_data="admin_users")],
         [InlineKeyboardButton("🚫 محظورين من بوت", callback_data="admin_banned")],
@@ -27,15 +25,6 @@ def admin_menu():
         [InlineKeyboardButton("▶️ تشغيل البوت للجميع", callback_data="admin_start_all")],
         [InlineKeyboardButton("🔙 رجوع", callback_data="back_main")],
     ])
-
-
-def ssh_countries_menu(countries: list):
-    """قائمة الدول كأزرار"""
-    rows = []
-    for i, c in enumerate(countries[:60]):
-        rows.append([InlineKeyboardButton(c, callback_data=f"ssh_country:{i}")])
-    rows.append([InlineKeyboardButton("🔙 رجوع", callback_data="back_main")])
-    return InlineKeyboardMarkup(rows)
 
 
 def list_menu(items: list, prefix: str):

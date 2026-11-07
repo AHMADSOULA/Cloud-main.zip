@@ -18,7 +18,6 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
-# ✅ غير ملف Youtube
 DARK_FILE_YOUTUBE = {
     "name": "YOUTUBE_4H", 
     "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="
@@ -51,12 +50,10 @@ def is_admin(user_id: int) -> bool:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.register_user(user.id, user.username or user.first_name)
-
     if is_admin(user.id):
-        await update.message.reply_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=True), disable_web_page_preview=True)
-        return
-
-    await update.message.reply_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=False), disable_web_page_preview=True)
+        await update.message.reply_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=True))
+    else:
+        await update.message.reply_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=False))
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -64,82 +61,86 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     urls = extract_urls(text)
     
     if not urls: return await update.message.reply_text("⚠️ أرسل رابط SSO صحيح.")
-    
     sso_url = urls[0]
-    if "skills.google" not in sso_url and "qwiklabs" not in sso_url and "accounts.google.com" not in sso_url:
-        return await update.message.reply_text("⚠️ الرابط لا يبدو من Google Skills.")
 
-    default_image = "docker.io/ajndjd2/ahmed-vip1"
+    # ✅ فحص الإيميل وكلمة السر
+    if "addsession" in sso_url.lower() and "password=" not in sso_url.lower():
+        await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
+        return await update.message.reply_text("📧 لقينا رابط الحساب.\n🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
+
+    await process_deploy(update, context, sso_url)
+
+async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    password = (update.message.text or "").strip()
+    if not password: return
+
+    session = await db.get_session(user.id)
+    if not session or session.get("state") != "waiting_password": return
+
+    sso_url = session.get("sso_url")
+    await db.clear_session(user.id)
+
+    try: await update.message.delete() # نمسحو كلمة السر من الشات
+    except: pass
+
+    if "Password=" not in sso_url:
+        sep = "&" if "?" in sso_url else "?"
+        sso_url = f"{sso_url}{sep}Password={password}"
+
+    await process_deploy(update, context, sso_url)
+
+async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
+    user = update.effective_user
+    # ✅ رسالة وحدة كتتبدل
+    status_msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
     
-    # ✅ كنمررو context.bot مباشرة
-    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, context.bot, context))
+    browser = StealthBrowser()
+    try:
+        ctx = await browser.start()
+        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
+        
+        # ✅ نمسحو الرسالة دايما ملي يكمل
+        try: await status_msg.delete()
+        except: pass
+
+        if result.get("success"):
+            domain = result.get("domain")
+            # ✅ كيبعت غير الملف
+            new_uri = build_darktunnel_uri_with_host(DARK_FILE_YOUTUBE["uri"], domain)
+            if new_uri:
+                bio = io.BytesIO(new_uri.encode("utf-8"))
+                bio.name = f"{DARK_FILE_YOUTUBE['name']} - {domain}.dark"
+                await context.bot.send_document(chat_id=update.effective_chat.id, document=bio, filename=bio.name)
+        else:
+            # ✅ عند الخطأ كيصيفط غير رسالة توقيف (والصورة تصيفطات من sso_flow)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ توقف الخدمة\nحدث مشكل أثناء التنفيذ.")
+                
+    except Exception as e:
+        try: await status_msg.delete()
+        except: pass
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ توقف الخدمة\nحدث خطأ غير متوقع.")
+    finally:
+        await browser.close()
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    user = update.effective_user
-    data = query.data
-
-    if data == "back_main":
-        if is_admin(user.id):
-            await query.message.edit_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(True), disable_web_page_preview=True)
-        else:
-            await query.message.edit_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(False), disable_web_page_preview=True)
-            
-    elif data == "admin" and is_admin(user.id):
-        await query.message.edit_text("⚙️ لوحة الأدمن:", reply_markup=admin_menu())
-    elif data == "admin_stats" and is_admin(user.id):
-        total = await db.count_jobs()
-        users = await db.get_all_users()
-        await query.message.edit_text(f"📊 *إحصائيات:*\n\n👥 المستخدمين: {len(users)}\n🔧 المهام: {total}", parse_mode=ParseMode.MARKDOWN, reply_markup=admin_menu())
+    if query.data == "back_main":
+        await query.message.edit_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin(query.from_user.id)))
 
 async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
     text = update.message.text or ""
+    
+    # ✅ إلا كان المستخدم كيصيفط كلمة السر
+    session = await db.get_session(user.id)
+    if session and session.get("state") == "waiting_password":
+        await handle_password(update, context)
+        return
+
     if extract_urls(text):
         await handle_url(update, context)
         return
-    await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
-
-async def run_deploy_task(chat_id, user_id, sso_url, image, bot, context):
-    browser = StealthBrowser()
-    try:
-        ctx = await browser.start()
-        # ✅ هنا فين كان المشكل: ولينا كناديو run_sso_flow بالمعطيات الصحيحة
-        result = await run_sso_flow(ctx, bot, chat_id, sso_url, image)
         
-        if result.get("success"):
-            domain = result.get("domain")
-            flag = result.get("flag", "🌍")
-            await db.add_job(user_id, sso_url)
-            
-            # ✅ إرسال الرابط بلا http
-            clean_url = result['final_url'].replace("https://", "").replace("http://", "")
-            await bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{clean_url}</code>", parse_mode=ParseMode.HTML)
-            
-            # ✅ إرسال ملف Youtube فقط
-            try:
-                new_uri = build_darktunnel_uri_with_host(DARK_FILE_YOUTUBE["uri"], domain)
-                if new_uri:
-                    bio = io.BytesIO(new_uri.encode("utf-8"))
-                    bio.name = f"{DARK_FILE_YOUTUBE['name']}_{flag} - {domain}.dark"
-                    await bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
-            except Exception as file_err:
-                log.error(f"❌ فشل إرسال ملف Youtube: {file_err}")
-                    
-        else:
-            err_code = result.get("error", "")
-            detail = result.get("message", "")
-            
-            if err_code == "step4_failed":
-                error_msg = f"❌ فشل إنشاء Cloud Run.\n{detail}"
-            elif err_code == "step5_failed":
-                error_msg = f"❌ فشل في الحصول على الرابط.\n{detail}"
-            else: 
-                error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
-                
-            await bot.send_message(chat_id=chat_id, text=error_msg)
-                
-    except Exception as e:
-        await bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:100]}")
-    finally:
-        await browser.close()
+    await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")

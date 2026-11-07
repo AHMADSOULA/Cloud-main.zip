@@ -6,7 +6,7 @@ from utils.logger import get_logger
 log = get_logger("Console")
 
 class CloudConsole:
-    def __init__(self, context, bot, chat_id):
+    def __init__(self, context, bot=None, chat_id=None):
         self.context = context
         self.bot = bot
         self.chat_id = chat_id
@@ -27,7 +27,6 @@ class CloudConsole:
         except Exception as e:
             log.warning(f"⚠️ فشل التصوير: {e}")
 
-    # ✅ نفس الدالة ديال GC.py
     async def step1_welcome_screen(self, page):
         log.info("🚀 step1: TOS")
         await page.wait_for_load_state("networkidle")
@@ -41,7 +40,6 @@ class CloudConsole:
             pass
         await page.wait_for_load_state("networkidle")
 
-    # ✅ نفس الدالة ديال GC.py
     async def step2_tos_and_country(self, page):
         log.info("🚀 step2: Terms Dialog")
         agree_btn = page.get_by_role("button", name="Agree and continue")
@@ -56,7 +54,6 @@ class CloudConsole:
         except Exception:
             log.info("ℹ️ الشروط مابانوش، تخطي تلقائي.")
 
-    # ✅ نفس الدالة ديال GC.py
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
@@ -76,7 +73,6 @@ class CloudConsole:
         except Exception as e:
              log.warning(f"⚠️ مشكل فـ API: {str(e)}")
 
-    # ✅ نفس الدالة ديال GC.py بالحرف
     async def step4_create_cloud_run(self, page, project_id, authuser, image, region="europe-west1"):
         log.info(f"🌐 step4: إنشاء Cloud Run — region={region}")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}&region={region}"
@@ -112,7 +108,6 @@ class CloudConsole:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-    # ✅ نفس الدالة ديال GC.py
     async def step5_get_deployed_url(self, page):
         log.info("⏳ step5: انتظار الرابط")
         try:

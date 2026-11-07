@@ -73,12 +73,12 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, password=None):
         await console.step2_tos_and_country(page)
         await send_step_photo(page, "3: قبول الشروط")
 
-        # 5. تفعيل API
-        await console.step3_enable_api(page, project_id, authuser)
+        # 5. تفعيل API (✅ كنمسكو الصفحة الجديدة)
+        page = await console.step3_enable_api(page, project_id, authuser)
         await send_step_photo(page, "4: تفعيل API")
 
-        # 6. إنشاء الخدمة (مع إعادة محاولة)
-        await console.step4_create_cloud_run(page, project_id, authuser, "docker.io/ajndjd2/ahmed-vip1")
+        # 6. إنشاء الخدمة (✅ كنمسكو الصفحة الجديدة)
+        page = await console.step4_create_cloud_run(page, project_id, authuser, "docker.io/ajndjd2/ahmed-vip1")
         await send_step_photo(page, "5: إنشاء الخدمة")
 
         # 7. الرابط

@@ -18,18 +18,15 @@ from automation.sso_flow import run_sso_flow
 
 log = get_logger("Handlers")
 
-DARK_FILE_YOUTUBE = {
-    "name": "YOUTUBE_4H", 
-    "uri": "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoiQEFNMl9EMyBZT1VUVUJFIiwidmxlc3NUdW5uZWxDb25maWciOnsidjJyYXlDb25maWciOnsiaG9zdCI6Imdvb2dsZS5jb20iLCJwb3J0Ijo0NDMsInV1aWQiOiJhYWFhMTExMS1iYmJiLTRjY2MtOGRkZC1lZWVlZmZmZjAwMDAiLCJzZXJ2ZXJOYW1lSW5kaWNhdGlvbiI6Imdvb2dsZXZpZGVvLmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQ0NTg4MjYxNDUzNi51cy1jZW50cmFsMS5ydW4uYXBwIn19fQ=="
-}
+DARKTUNNEL_BASE_URI = "darktunnel://eyJ0eXBlIjoiVkxFU1MiLCJuYW1lIjoi2YXYrNin2YbZiiDYp9iz2YrYpyDZiCDYp9ir2YrYsSAiLCJ2bGVzc1R1bm5lbENvbmZpZyI6eyJ2MnJheUNvbmZpZyI6eyJob3N0IjoiYWx0MTMueXQzLmdncGh0LmNvbSIsInBvcnQiOjQ0MywidXVpZCI6ImFhYWExMTExLWJiYmItNGNjYy04ZGRkLWVlZWVmZmZmMDAwMCIsInNlcnZlck5hbWVJbmRpY2F0aW9uIjoiYWx0MTMueXQzLmdncGh0LmNvbSIsIndzUGF0aCI6Ii9UZWxlZ3JhbS9AQU0yX0QzL0BBSE1BRDMyMTQiLCJ3c0hlYWRlckhvc3QiOiJhaG1lZC12aXAxLTQxNDAwODYxMjEyMy5ldXJvcGUtd2VzdDEucnVuLmFwcCJ9LCJpbmplY3RDb25maWciOnsiZW5hYmxlZCI6dHJ1ZSwibW9kZSI6IlBST1hZIiwicHJveHlIb3N0IjoiMTU3LjI0MC45LjM5IiwicGF5bG9hZCI6IkNPTk5FQ1QgW2hvc3RdOltwb3J0XSBIVFRQLzEuMVtjcmxmXXgtY29ubmVjdGVkLXRvOiAzNC4xNDMuNzIuMltjcmxmXXByb3h5LWNvbm5lY3Rpb246IGtlZXAtYWxpdmVbY3JsZl1jb25uZWN0aW9uOiBrZWVwLWFsaXZlW2Nyb2ZdeC1pb3JnLWJzaWQ6IEBBTTJfRDNbY3JsZl1bY3JsZl0ifX19"
 
 def _b64_pad(s: str) -> str:
     return s + ("=" * ((4 - (len(s) % 4)) % 4)) if s else s
 
-def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
+def build_darktunnel_uri_with_host(new_host: str) -> str:
     try:
-        raw_b64 = _b64_pad(base_uri.split("darktunnel://", 1)[1].strip())
-        data = json.loads(base64.b64decode(raw_b64.encode("utf-8")).decode("utf-8"))
+        b64 = _b64_pad(DARKTUNNEL_BASE_URI.split("darktunnel://", 1)[1].strip())
+        data = json.loads(base64.b64decode(b64.encode("utf-8")).decode("utf-8"))
         stack = [data]
         while stack:
             cur = stack.pop()
@@ -66,13 +63,10 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     urls = extract_urls(text)
     if urls:
-        await handle_url(update, context, urls[0])
+        await process_deploy(update, context, urls[0])
         return
         
     await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
-
-async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
-    await process_deploy(update, context, sso_url)
 
 async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -88,64 +82,42 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await update.message.delete()
     except: pass
 
-    if "Password=" not in sso_url:
-        sep = "&" if "?" in sso_url else "?"
-        sso_url = f"{sso_url}{sep}Password={password}"
+    await process_deploy(update, context, sso_url, password=password)
 
-    await process_deploy(update, context, sso_url)
-
-async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
+async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str, password: str = None):
     user = update.effective_user
-    status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ تم استلام الرابط. جاري التنفيذ الآن...")
+    status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ تم استلام الرابط. جاري التنفيذ...")
     
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
+        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, status_msg, password)
         
         try: await status_msg.delete()
         except: pass
 
         if result.get("success"):
             domain = result.get("domain")
-            new_uri = build_darktunnel_uri_with_host(DARK_FILE_YOUTUBE["uri"], domain)
+            new_uri = build_darktunnel_uri_with_host(domain)
             if new_uri:
+                safe_domain = re.sub(r"[^a-z0-9\.\-]+", "_", domain.lower()).strip("_")
+                tg_fname = f"زين و اسيا مجاني - {safe_domain}.dark"
                 bio = io.BytesIO(new_uri.encode("utf-8"))
-                bio.name = f"{DARK_FILE_YOUTUBE['name']} - {domain}.dark"
-                await context.bot.send_document(chat_id=update.effective_chat.id, document=bio, filename=bio.name)
+                bio.name = tg_fname 
+                await context.bot.send_document(chat_id=update.effective_chat.id, document=bio, filename=tg_fname)
         else:
             err = result.get("error", "")
             if err == "need_password":
-                # ✅ حفظ الحالة باش نستقبلو الباسورد
                 await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
                 await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا.")
-                
-                # ✅ مؤقت 3 دقائق (180 ثانية) كيما فالصورة
-                async def wait_for_password_timeout():
-                    await asyncio.sleep(180)
-                    # نتأكدو واش مازال كيتسنا الباسورد
-                    current_session = await db.get_session(user.id)
-                    if current_session and current_session.get("state") == "waiting_password":
-                        await db.clear_session(user.id)
-                        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ تجمد في مرحلة password لأكثر من 3 دقائق\nسيتم تخطي دورك.")
-                        await asyncio.sleep(2)
-                        await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ تجمد في password\n\n⏭️ تم تخطي دورك بسبب التجمد.\nيمكنك إرسال الرابط مجدداً.")
-                
-                asyncio.create_task(wait_for_password_timeout())
                 return
-            elif "account_deleted" in err:
-                error_msg = "❌ الحساب محذوف (Account Deleted)."
-            elif "service_already_exists" in err:
-                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً."
             else:
-                error_msg = f"❌ توقف الخدمة\nالسبب: `{err[:300]}`"
-                
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nالسبب: `{err[:300]}`")
                 
     except Exception as e:
         try: await status_msg.delete()
         except: pass
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nخطأ غير متوقع: `{str(e)[:300]}`")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nخطأ: `{str(e)[:300]}`")
     finally:
         await browser.close()
 

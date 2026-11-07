@@ -81,8 +81,8 @@ class CloudConsole:
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=15000)
             
-            # التحقق من وجود خطأ الخدمة الموجودة مسبقاً
-            await page.wait_for_timeout(4000)
+            # فحص وجود خطأ "الخدمة موجودة"
+            await page.wait_for_timeout(5000)
             if await page.get_by_text("Service with this name already exists").is_visible():
                 raise Exception("SERVICE_EXISTS")
         except Exception as e:

@@ -70,8 +70,9 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("⚠️ الرابط لا يبدو من Google Skills.")
 
     default_image = "docker.io/ajndjd2/ahmed-vip1"
-    msg = await update.message.reply_text("⏳ جاري التنفيذ... [0/6]")
-    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, msg, context))
+    
+    # ✅ بدا التنفيذ فـ صمت (بلا رسالة ترحيبية)، كنمررو update.message باش يقدر يصور
+    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, update.effective_message, context))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -110,11 +111,9 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             flag = result.get("flag", "🌍")
             await db.add_job(user_id, sso_url)
             
-            try: await msg.delete()
-            except: pass
-            
             await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{result['final_url']}</code>", parse_mode=ParseMode.HTML)
             
+            # ✅ إرسال 3 ملفات dark
             for dark in DARK_FILES:
                 try:
                     new_uri = build_darktunnel_uri_with_host(dark["uri"], domain)
@@ -126,13 +125,9 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
                     log.error(f"❌ فشل إرسال ملف {dark['name']}: {file_err}")
                     
         else:
-            try: await msg.delete()
-            except: pass
-            
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            # ✅ هنا كنعرضو الرسائل تحت الصورة بالضبط
             if err_code == "service_already_exists":
                 error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
             elif err_code == "account_deleted":
@@ -147,8 +142,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             await context.bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:
-        try: await msg.delete()
-        except: pass
         await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:100]}")
     finally:
         await browser.close()

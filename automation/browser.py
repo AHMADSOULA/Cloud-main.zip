@@ -18,7 +18,6 @@ class StealthBrowser:
         self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
         log.info(f"📁 Using fresh profile: {self.profile_dir}")
 
-        # ✅ نفس أوامر GC.py
         args = [
             "--no-sandbox",
             "--disable-setuid-sandbox",
@@ -31,7 +30,7 @@ class StealthBrowser:
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
             channel="chromium",
-            headless=True, # ✅ رجعناها True باش ما يطيحش السيرفر
+            headless=True,
             args=args,
             viewport={"width": 1920, "height": 1080},
             locale="en-US",

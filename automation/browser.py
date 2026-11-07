@@ -6,6 +6,7 @@ from utils.logger import get_logger
 
 log = get_logger("Browser")
 
+
 class StealthBrowser:
     def __init__(self):
         self.playwright = None
@@ -19,7 +20,7 @@ class StealthBrowser:
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage", # مهم جداً لمنع page crashed
+            "--disable-dev-shm-usage",
             "--disable-gpu",
             "--disable-software-rasterizer",
             "--disable-accelerated-2d-canvas",
@@ -39,45 +40,43 @@ class StealthBrowser:
             "--metrics-recording-only",
             "--safebrowsing-disable-auto-update",
             "--renderer-process-limit=1",
-            "--js-flags=--max-old-space-size=512", # زيادة الذاكرة قليلاً
-            "--disable-features=IsolateOrigins,site-per-process", # تقليل استهلاك الذاكرة
+            "--js-flags=--max-old-space-size=256",
             "--window-size=1280,720",
             f"--user-agent={config.USER_AGENT}",
         ]
 
-        try:
-            self.context = await self.playwright.chromium.launch_persistent_context(
-                user_data_dir=config.CHROME_PROFILE_DIR,
-                headless=config.HEADLESS,
-                args=args,
-                viewport={"width": 1280, "height": 720},
-                user_agent=config.USER_AGENT,
-                locale="en-US",
-                timezone_id="America/New_York",
-                color_scheme="light",
-                java_script_enabled=True,
-                extra_http_headers={
-                    "Accept-Language": "en-US,en;q=0.9",
-                },
-            )
-        except Exception as e:
-            log.error(f"❌ فشل تشغيل المتصفح: {e}")
-            await self.close()
-            raise
+        self.context = await self.playwright.chromium.launch_persistent_context(
+            user_data_dir=config.CHROME_PROFILE_DIR,
+            headless=config.HEADLESS,
+            args=args,
+            viewport={"width": 1280, "height": 720},
+            user_agent=config.USER_AGENT,
+            locale="en-US",
+            timezone_id="America/New_York",
+            color_scheme="light",
+            java_script_enabled=True,
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+            },
+        )
 
         await self.context.add_init_script(STEALTH_JS)
+
         self.context.set_default_timeout(config.PAGE_TIMEOUT)
         self.context.set_default_navigation_timeout(config.NAV_TIMEOUT)
+
         log.info("✅ المتصفح جاهز")
         return self.context
 
     async def close(self):
         if self.context:
-            try: await self.context.close()
-            except: pass
-            self.context = None
+            try:
+                await self.context.close()
+            except Exception:
+                pass
         if self.playwright:
-            try: await self.playwright.stop()
-            except: pass
-            self.playwright = None
+            try:
+                await self.playwright.stop()
+            except Exception:
+                pass
         log.info("تم إغلاق المتصفح")

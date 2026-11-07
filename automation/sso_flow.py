@@ -1,8 +1,9 @@
 import re
 import asyncio
 import os
-from urllib.parse import urlparse, parse_qs, unquote
-from automation.console import CloudConsole, NeedPasswordException
+from urllib.parse import urlparse, parse_qs
+from automation.console import CloudConsole
+from automation.api_deployer import deploy_cloud_run
 from utils.logger import get_logger
 
 log = get_logger("SSOFlow")
@@ -17,130 +18,85 @@ def extract_domain_from_service_url(service_url: str) -> str:
         return urlparse(s).netloc.strip()
     return s.replace("http://", "").replace("https://", "").split("/")[0].strip()
 
-def _has_password(url: str) -> bool:
-    return "password=" in (url or "").lower()
-
-async def _is_blocked(page) -> str:
-    try:
-        url = page.url.lower()
-        if "accountdeleted" in url or "deletedaccount" in url: 
-            return "account_deleted"
-        result = await page.evaluate("""
-            () => {
-                const body = (document.body.innerText || '').toLowerCase();
-                if (body.includes('account deleted') || body.includes('account has been deleted')) return 'account_deleted';
-                if (body.includes('session expired') || body.includes('invalid link')) return 'expired';
-                return null;
-            }
-        """)
-        return result
-    except: return None
-
-async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, msg_obj):
+async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, password=None):
     project_id = extract_project_id(sso_url)
     if not project_id:
         return {"success": False, "error": "❌ Project ID في الرابط."}
 
     console = CloudConsole(context)
     page = None
-    
+
     async def update_msg(text):
-        try:
-            await msg_obj.edit_text(text)
-        except:
-            pass
+        if status_msg:
+            try: await status_msg.edit_text(text)
+            except: pass
 
     try:
         page = await context.new_page()
         
-        # 1
+        # ✅ 1. تسجيل الدخول عبر المتصفح
         await update_msg("1) فتح رابط الطالب...")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         
-        # 2
-        await update_msg("2 ✅")
-        await console.step1_welcome_screen(page)
+        await page.wait_for_timeout(3000)
         
-        # ✅ فحص كلمة السر
-        await console.check_password_page(page)
+        # فحص إذا كان يحتاج باسورد
+        if "accounts.google.com" in page.url or "signin" in page.url:
+            is_password = await page.evaluate("() => !!document.querySelector('input[type=\"password\"]')")
+            if is_password:
+                if not password:
+                    return {"success": False, "error": "need_password"}
+                await page.fill('input[type="password"]', password)
+                await page.wait_for_timeout(500)
+                await page.keyboard.press("Enter")
+                await page.wait_for_timeout(5000)
+
+        await update_msg("2) قبول التوجيهات...")
+        await console.step1_welcome_screen(page)
         
         try:
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
         except Exception as e:
-            log.warning(f"⚠️ ما وصلناش Dashboard بـ URL: {e}")
+            log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
 
-        current_qs = parse_qs(urlparse(page.url).query)
-        authuser = current_qs.get('authuser', ['1'])[0]
-
-        # 3
-        await update_msg(f"3 ✅ (Project: {project_id})")
+        await update_msg("3) قبول الشروط...")
         await console.step2_tos_and_country(page)
 
-        # 4
-        await update_msg("4) تفعيل Cloud Run API...")
+        # ✅ 2. استخراج الـ Token من المتصفح
+        await update_msg("4) استخراج بيانات الدخول (Token)...")
+        
+        access_token = None
+        
+        # دالة مساعدة لالتقاط الـ Token من طلبات الشبكة
+        def capture_token(request):
+            nonlocal access_token
+            if "googleapis.com" in request.url and not access_token:
+                auth = request.headers.get("authorization")
+                if auth and auth.startswith("Bearer "):
+                    access_token = auth.replace("Bearer ", "")
+
+        page.on("request", capture_token)
+        
+        # نعملو طلب بسيط باش يبدا المتصفح يصيفط طلبات فيها الـ Token
         try:
-            await console.step3_enable_api(page, project_id, authuser)
+            await page.goto("https://console.cloud.google.com/welcome", wait_until="domcontentloaded", timeout=30000)
+            await page.wait_for_timeout(5000)
         except:
             pass
-        
-        # 5
-        await update_msg("5 ⚠️ API مؤكد، متابعة...")
 
-        # 6
-        await update_msg("6) فتح Cloud Run...")
-        run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
-        await page.goto(run_url, wait_until="domcontentloaded")
-        
-        # 7
-        await update_msg("7 ✅")
-        await page.wait_for_timeout(5000)
+        if not access_token:
+            return {"success": False, "error": "❌ فشل استخراج الـ Token من المتصفح."}
 
-        # 8
-        await update_msg("8) تعبئة الحقول...")
-        try:
-            label = page.get_by_text("Container Image URL").first
-            await label.click(timeout=15000)
-            await page.wait_for_timeout(500)
-            await page.keyboard.type(image, delay=50)
-        except Exception as e:
-            raise Exception(f"فشل في إدخال صورة الحاوية: {str(e)}")
+        # ✅ 3. النشر عبر API
+        await update_msg("5) جاري النشر عبر Google API...")
         
-        # 9
-        await update_msg("9 ✅")
-        await page.wait_for_timeout(3000)
+        # كنستعملو asyncio.to_thread باش ما نبلوكيوش البوت
+        final_url = await asyncio.to_thread(deploy_cloud_run, project_id, access_token)
+        domain = extract_domain_from_service_url(final_url)
 
-        # 10
-        await update_msg("10) الخدمة Create...")
-        try:
-            await page.get_by_role("radio", name="Allow public access").click()
-            await page.get_by_role("radio", name="Instance-based").click()
-            try: await page.get_by_role("button", name="Hide").click(timeout=2000)
-            except: pass
-            await page.keyboard.press("End")
-            await page.wait_for_timeout(1000)
-            
-            create_btn = page.get_by_role("button", name="Create")
-            await create_btn.click(force=True)
-        except Exception as e:
-            raise Exception(f"فشل في ضغط Create: {str(e)}")
-        
-        # 11
-        await update_msg("11 ✅ Create")
-        
-        # 12
-        await update_msg("12) انتظار رابط النشر...")
-        try:
-            link_locator = page.locator('a[href*="run.app"]')
-            await link_locator.wait_for(state="visible", timeout=120000) 
-            final_url = await link_locator.get_attribute("href")
-            domain = extract_domain_from_service_url(final_url)
-            return {"success": True, "domain": domain}
-        except Exception as e:
-            return {"success": False, "error": f"انتهى الوقت بدون رابط"}
+        return {"success": True, "domain": domain}
 
-    except NeedPasswordException:
-        return {"success": False, "error": "need_password"}
     except Exception as e:
         err_str = str(e)
         log.error(f"❌ خطأ: {err_str}")

@@ -27,14 +27,12 @@ class CloudConsole:
         agree_btn = page.get_by_role("button", name="Agree and continue")
         try:
             await agree_btn.wait_for(state="visible", timeout=5000)
-            
             checkboxes = page.get_by_role("checkbox")
             try:
                 await checkboxes.nth(0).click()
                 await asyncio.sleep(1)
                 await checkboxes.nth(1).click()
             except: pass
-            
             await agree_btn.click()
             await page.wait_for_load_state("domcontentloaded", timeout=10000)
         except Exception:

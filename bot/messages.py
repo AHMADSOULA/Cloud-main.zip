@@ -1,29 +1,17 @@
-WELCOME_ADMIN = """
-👋 **Google Cloud → Cloud Run**
+WELCOME = """
+👋 *مرحباً بك في Qwiklabs → Cloud Run*
 
-أرسل رابط **Google SSO** من:
-`https://www.skills.google/focuses/33353?parent=catalog`
+📌 *طريقة الاستعمال:*
+1. افتح Google Skills واختر Lab
+2. انسخ رابط SSO
+3. أرسل الرابط هنا
+4. البوت سيدخل تلقائياً وينشر خدمة Cloud Run
 
-🔐 **كلمة السر → يخبرك البوت**
-🎯 **كل شيء تلقائي**
-
-/cancel — إلغاء
-/status — حالة
+⚠️ الرابط صالح 5 ساعات فقط.
 """
 
-WELCOME_USER = """
-👋 **Google Cloud → Cloud Run**
-
-أرسل رابط **Google SSO** من:
-`https://www.skills.google/focuses/33353?parent=catalog`
-
-🔐 **كلمة السر → يخبرك البوت**
-🎯 **كل شيء تلقائي**
-
-/cancel — إلغاء
-/status — حالة
-"""
-
-WELCOME_PENDING = "⏳ حسابك قيد المراجعة. يرجى الانتظار حتى يتم تفعيلك."
 PROCESSING = "⏳ جاري المعالجة..."
+
 NO_URL = "⚠️ أرسل رابط SSO صحيح."
+
+FAILED = "❌ *فشل*\n\n{error}"

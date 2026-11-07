@@ -31,7 +31,7 @@ def deploy_cloud_run(project_id: str, access_token: str) -> str:
                     break
                 time.sleep(2)
     except Exception as e:
-        log.warning(f"API Enable warning: {e}")
+        log.warning(f"API Enable warning (maybe already enabled): {e}")
 
     # 2. Create Cloud Run Service
     parent = f"projects/{project_id}/locations/{REGION}"

@@ -4,6 +4,10 @@ from utils.logger import get_logger
 
 log = get_logger("Console")
 
+class NeedPasswordException(Exception):
+    """خطأ مخصص ملي كيطلب Google كلمة السر"""
+    pass
+
 class CloudConsole:
     def __init__(self, context):
         self.context = context
@@ -17,9 +21,15 @@ class CloudConsole:
             button = page.locator("text='I understand'")
             if await button.is_visible(timeout=3000):
                 await button.click()
-        except:
-            pass
+        except: pass
         await page.wait_for_load_state("networkidle")
+
+    async def check_password_page(self, page):
+        """✅ كتتحقق واش طلعات صفحة كلمة السر وكتطلق استثناء"""
+        if "accounts.google.com" in page.url or "signin" in page.url:
+            is_password = await page.evaluate("() => !!document.querySelector('input[type=\"password\"]')")
+            if is_password:
+                raise NeedPasswordException("password_required")
 
     async def step2_tos_and_country(self, page):
         log.info("🚀 step2: Terms Dialog")
@@ -74,18 +84,14 @@ class CloudConsole:
         try:
             await page.get_by_role("radio", name="Allow public access").click()
             await page.get_by_role("radio", name="Instance-based").click()
-            
             try:
                 await page.get_by_role("button", name="Hide").click(timeout=2000)
-            except:
-                pass
-                
+            except: pass
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
             
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True)
-            
         except Exception as e:
             raise Exception(f"فشل في اختيار الإعدادات أو ضغط Create: {str(e)}")
 

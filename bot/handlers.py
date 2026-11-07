@@ -64,7 +64,8 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     urls = extract_urls(text)
     if urls:
-        await process_deploy(update, context, urls[0])
+        # ✅ التعديل: كنطلقو النشر فـ الخلفية باش البوت ما يتبلوكاش
+        asyncio.create_task(process_deploy(update, context, urls[0]))
         return
         
     await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
@@ -83,7 +84,7 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await update.message.delete()
     except: pass
 
-    await process_deploy(update, context, sso_url, password=password)
+    asyncio.create_task(process_deploy(update, context, sso_url, password=password))
 
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str, password: str = None):
     user = update.effective_user

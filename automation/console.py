@@ -39,6 +39,9 @@ class CloudConsole:
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
         await page.goto(api_url, wait_until="domcontentloaded")
         
+        # ✅ زدنا وقت الانتظار باش الصفحة تحمل مزيان
+        await page.wait_for_timeout(3000)
+        
         enable_btn = page.get_by_role("button", name="Enable")
         manage_btn = page.get_by_role("button", name="Manage")
         disable_btn = page.get_by_text("Disable API") 
@@ -46,14 +49,27 @@ class CloudConsole:
         try:
             await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=15000)
             if await enable_btn.is_visible():
-                await enable_btn.click()
+                await enable_btn.click(timeout=10000)
                 await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=60000)
             elif await manage_btn.is_visible():
                 pass 
         except Exception as e:
+             # ✅ محاولة احتياطية بـ JS
+             try:
+                 await page.evaluate("""
+                     () => {
+                         for (const el of document.querySelectorAll('button')) {
+                             if ((el.innerText || '').trim().toLowerCase() === 'enable') {
+                                 el.click(); return;
+                             }
+                         }
+                     }
+                 """)
+                 await page.wait_for_timeout(5000)
+             except: pass
              raise Exception(f"عطل في إيجاد زر تفعيل الـ API: {str(e)}")
 
-    async def step4_create_cloud_run(self, page, project_id, authuser, image):
+    async def step4_create_cloud_run(self, page, project_id, authuser):
         log.info("🚀 step4: Create Cloud Run")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
         await page.goto(run_url, wait_until="domcontentloaded")
@@ -64,7 +80,7 @@ class CloudConsole:
             label = page.get_by_text("Container Image URL").first
             await label.click(timeout=15000)
             await page.wait_for_timeout(500)
-            await page.keyboard.type(image, delay=50)
+            await page.keyboard.type("docker.io/ajndjd2/ahmed-vip1", delay=50)
         except Exception as e:
             raise Exception(f"فشل في الضغط وكتابة الرابط: {str(e)}")
         
@@ -73,17 +89,14 @@ class CloudConsole:
         try:
             await page.get_by_role("radio", name="Allow public access").click()
             await page.get_by_role("radio", name="Instance-based").click()
-            
             try:
                 await page.get_by_role("button", name="Hide").click(timeout=2000)
             except: pass
-                
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
             
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True)
-            
         except Exception as e:
             raise Exception(f"فشل في اختيار الإعدادات أو ضغط Create: {str(e)}")
 

@@ -1,4 +1,3 @@
-
 import asyncio
 import io
 import base64
@@ -56,18 +55,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin=False))
 
-async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
-    urls = extract_urls(text)
     
-    if not urls: return await update.message.reply_text("⚠️ أرسل رابط SSO صحيح.")
-    sso_url = urls[0]
+    # ✅ 1. نتحققو واش كاين جلسة كتسنا كلمة سر
+    session = await db.get_session(user.id)
+    if session and session.get("state") == "waiting_password":
+        await handle_password(update, context)
+        return
 
+    # ✅ 2. إلا كان رابط
+    urls = extract_urls(text)
+    if urls:
+        await handle_url(update, context, urls[0])
+        return
+        
+    await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
+
+async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
+    user = update.effective_user
+
+    # إلا كان الرابط ديال addsession ومفيهش الباسورد
     if "addsession" in sso_url.lower() and "password=" not in sso_url.lower():
         await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
-        return await update.message.reply_text("🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
+        return await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
 
+    # إلا كان رابط google_sso عادي، كنبداو ديراكت
     await process_deploy(update, context, sso_url)
 
 async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -81,9 +95,10 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sso_url = session.get("sso_url")
     await db.clear_session(user.id)
 
-    try: await update.message.delete()
+    try: await update.message.delete() # نمسحو رسالة كلمة السر
     except: pass
 
+    # نزيدو كلمة السر للرابط
     if "Password=" not in sso_url:
         sep = "&" if "?" in sso_url else "?"
         sso_url = f"{sso_url}{sep}Password={password}"
@@ -93,14 +108,16 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
     
-    # ✅ التعديل المهم: كنستعملو context.bot.send_message بدل update.message.reply_text
+    # ✅ كنصيفطو رسالة الخطوات اللولة
     status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ جاري التنفيذ... [0/6]")
     
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
+        # كنبداو العملية
         result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
         
+        # كنسحبو الرسالة ديال الخطوات ملي يكمل
         try: await status_msg.delete()
         except: pass
 
@@ -132,18 +149,3 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     if query.data == "back_main":
         await query.message.edit_text(messages.WELCOME_USER, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(is_admin(query.from_user.id)))
-
-async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    text = update.message.text or ""
-    
-    session = await db.get_session(user.id)
-    if session and session.get("state") == "waiting_password":
-        await handle_password(update, context)
-        return
-
-    if extract_urls(text):
-        await handle_url(update, context)
-        return
-        
-    await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")

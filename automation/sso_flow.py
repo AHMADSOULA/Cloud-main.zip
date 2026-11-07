@@ -18,6 +18,38 @@ def extract_domain_from_service_url(service_url: str) -> str:
         return urlparse(s).netloc.strip()
     return s.replace("http://", "").replace("https://", "").split("/")[0].strip()
 
+# ✅ كود اعتراض التوكن
+INTERCEPTOR_JS = """
+(function() {
+    window._gcp_captured_token = null;
+    
+    // اعتراض fetch
+    const origFetch = window.fetch;
+    window.fetch = async function(...args) {
+        const response = await origFetch.apply(this, args);
+        try {
+            let headers = args[1]?.headers;
+            if (headers) {
+                let auth = (headers instanceof Headers) ? (headers.get('authorization') || headers.get('Authorization')) : (headers['authorization'] || headers['Authorization']);
+                if (auth && auth.startsWith('Bearer ')) {
+                    window._gcp_captured_token = auth.replace('Bearer ', '');
+                }
+            }
+        } catch(e) {}
+        return response;
+    };
+
+    // اعتراض XHR
+    const origXHR = window.XMLHttpRequest.prototype.setRequestHeader;
+    window.XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
+        if (header.toLowerCase() === 'authorization' && value.startsWith('Bearer ')) {
+            window._gcp_captured_token = value.replace('Bearer ', '');
+        }
+        return origXHR.apply(this, arguments);
+    };
+})();
+"""
+
 async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, password=None):
     project_id = extract_project_id(sso_url)
     if not project_id:
@@ -25,28 +57,16 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
 
     console = CloudConsole(context)
     page = None
-    access_token = None
 
     async def update_msg(text):
         if status_msg:
             try: await status_msg.edit_text(text)
             except: pass
 
-    # ✅ التقاط التوكن
-    def capture_token(request):
-        nonlocal access_token
-        if access_token: return
-        try:
-            auth = request.headers.get("authorization") or request.headers.get("Authorization")
-            if auth and auth.startswith("Bearer "):
-                access_token = auth.replace("Bearer ", "").strip()
-                log.info("✅ تم التقاط الـ Token بنجاح!")
-        except Exception:
-            pass
-
     try:
         page = await context.new_page()
-        page.on("request", capture_token)
+        # ✅ نحقنو كود الاعتراض قبل ما نفتحو أي صفحة
+        await page.add_init_script(INTERCEPTOR_JS)
         
         # 1. فتح الرابط
         await update_msg("1) فتح رابط الطالب...")
@@ -86,35 +106,31 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         await page.wait_for_timeout(3000)
 
         # إجبار المتصفح على إرسال طلب باش نلتقطو التوكن
-        if not access_token:
-            try:
-                await page.evaluate("""
-                    async () => {
-                        try {
-                            await fetch('https://cloudresourcemanager.googleapis.com/v1/projects', {
-                                headers: { 'Accept': 'application/json' }
-                            });
-                        } catch (e) {}
-                    }
-                """)
-                await page.wait_for_timeout(3000)
-            except: pass
+        try:
+            await page.evaluate("""
+                async () => {
+                    try {
+                        await fetch('https://cloudresourcemanager.googleapis.com/v1/projects', {
+                            headers: { 'Accept': 'application/json' }
+                        });
+                    } catch (e) {}
+                }
+            """)
+            await page.wait_for_timeout(3000)
+        except: pass
 
+        # ✅ قراءة التوكن من المتغير اللي حقناه
+        access_token = await page.evaluate("() => window._gcp_captured_token")
+        
         if not access_token:
             try:
-                access_token = await page.evaluate("""
-                    () => {
-                        try { return window.gapi.auth.getToken().access_token; } catch(e) {}
-                        try { return window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token; } catch(e) {}
-                        return null;
-                    }
-                """)
+                access_token = await page.evaluate("() => window.gapi.auth.getToken().access_token")
             except: pass
 
         if not access_token:
             return {"success": False, "error": "❌ فشل استخراج Token. يرجى المحاولة مرة أخرى."}
 
-        # 6. النشر عبر API (هادي هي اللي كتعوض الواجهة)
+        # 6. النشر عبر API
         await update_msg("6) جاري النشر عبر API...")
         final_url = await asyncio.to_thread(deploy_cloud_run, project_id, access_token)
         domain = extract_domain_from_service_url(final_url)

@@ -18,36 +18,52 @@ def extract_domain_from_service_url(service_url: str) -> str:
         return urlparse(s).netloc.strip()
     return s.replace("http://", "").replace("https://", "").split("/")[0].strip()
 
-async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, password=None, image_uri=""):
+async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_uri="docker.io/ajndjd2/ahmed-vip1"):
     project_id = extract_project_id(sso_url)
     if not project_id:
-        return {"success": False, "error": "❌ Project ID غير موجود في الرابط."}
+        return {"success": False, "error": "PROJECT_ID_MISSING"}
 
     console = CloudConsole(context)
     page = None
     start_time = time.time()
-    current_step = "البداية"
+    
+    steps = [
+        "فتح رابط",
+        "تسجيل دخول",
+        "موافقت على شروط",
+        "cloud run api",
+        "تعبئة حقول",
+        "crater",
+        "انتضار رابط run.app"
+    ]
+    
+    async def update_msg(step_idx, status="loading"):
+        lines = []
+        for i, s in enumerate(steps):
+            if i < step_idx:
+                lines.append(f"{s} ✅")
+            elif i == step_idx:
+                if status == "loading":
+                    lines.append(f"{s} ...")
+                elif status == "success":
+                    lines.append(f"{s} ✅")
+                elif status == "error":
+                    lines.append(f"{s} ❌")
+            else:
+                break
+        text = "\n".join(lines)
+        try:
+            await status_msg.edit(text)
+        except Exception:
+            pass
 
-    steps_log = ["✅ تم استلام الرابط. جاري التنفيذ الآن...\n"]
-
-    async def update_msg(new_step_text=None, replace_last=False):
-        if replace_last and len(steps_log) > 1:
-            steps_log[-1] = new_step_text
-        elif new_step_text:
-            steps_log.append(new_step_text)
-        
-        full_text = "\n".join(steps_log)
-        if status_msg:
-            try: await status_msg.edit_text(full_text)
-            except: pass
-
-    async def take_screenshot(reason_text):
+    async def take_screenshot(caption):
         if not page or page.is_closed(): return
         try:
             path = f"/tmp/shot_{int(time.time()*1000)}.jpg"
-            await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=15000)
+            await page.screenshot(path=path, full_page=False, type="jpeg", quality=60, timeout=10000)
             with open(path, "rb") as f:
-                await bot.send_photo(chat_id=chat_id, photo=f, caption=reason_text[:1000])
+                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption[:1000])
             os.remove(path)
         except Exception as e:
             log.warning(f"⚠️ فشل إرسال صورة: {e}")
@@ -55,74 +71,54 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
     try:
         page = await context.new_page()
         
-        current_step = "1) فتح رابط الطالب"
-        await update_msg("1) فتح رابط الطالب...")
+        # 1
+        await update_msg(0, "loading")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
+        await page.wait_for_timeout(2000)
         
-        if "Account deleted" in await page.content():
-            await update_msg("1) فتح رابط الطالب ❌", replace_last=True)
-            raise Exception("الحساب محذوف (Account deleted)")
-
-        current_step = "2) تسجيل الدخول"
-        await update_msg("2) جاري تسجيل الدخول...")
-        await page.wait_for_timeout(3000)
-        try:
-            password_input = page.locator('input[type="password"]').first
-            if await password_input.is_visible(timeout=3000):
-                if not password:
-                    await update_msg("2) مطلوب كلمة السر 🔑", replace_last=True)
-                    return {"success": False, "error": "need_password"}
-                await password_input.fill(password)
-                await page.wait_for_timeout(500)
-                await page.keyboard.press("Enter")
-                await page.wait_for_timeout(5000)
-            await update_msg("2 ✅", replace_last=True)
-        except Exception:
-            await update_msg("2 ✅", replace_last=True)
-
-        current_step = "3) قبول التوجيهات"
-        await update_msg("3) قبول التوجيهات...")
+        if "Account deleted" in await page.content() or await page.locator("text='Account deleted'").is_visible():
+            await update_msg(0, "error")
+            raise Exception("EXPIRED_LINK")
+        await update_msg(0, "success")
+        
+        # 2
+        await update_msg(1, "loading")
         await console.step1_welcome_screen(page)
-        try: await page.wait_for_url("**/home/dashboard**", timeout=45000)
-        except: pass
+        try:
+            await page.wait_for_url("**/home/dashboard**", timeout=45000)
+        except:
+            await update_msg(1, "error")
+            raise Exception("EXPIRED_LINK")
+            
         current_qs = parse_qs(urlparse(page.url).query)
         authuser = current_qs.get('authuser', ['1'])[0]
-        await update_msg(f"3 ✅ (Project: {project_id})", replace_last=True)
-
-        current_step = "4) قبول الشروط"
-        await update_msg("4) قبول الشروط...")
-        await console.step2_tos_and_country(page)
-        await update_msg("4 ✅", replace_last=True)
-
-        current_step = "5) تفعيل Cloud Run API"
-        await update_msg("5) تفعيل Cloud Run API...")
-        await console.step3_enable_api(page, project_id, authuser)
-        await update_msg("5 ⚠️ API مؤكد، متابعة...", replace_last=True)
-
-        current_step = "6) فتح Cloud Run"
-        await update_msg("6) فتح Cloud Run...")
-        run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
-        try:
-            await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
-        except Exception as e:
-             if "crashed" in str(e).lower():
-                log.warning("⚠️ الصفحة انهارت أثناء فتح Cloud Run، محاولة مرة أخرى...")
-                await page.goto(run_url, wait_until="domcontentloaded", timeout=60000)
-             else:
-                raise e
-        await page.wait_for_timeout(5000)
-        await update_msg("6 ✅", replace_last=True)
+        await update_msg(1, "success")
         
-        current_step = "7) تعبئة الحقول"
-        await update_msg("7) تعبئة الحقول...")
-        await console.step4_create_cloud_run(page, project_id, authuser, image_uri)
-        await update_msg("7 ✅", replace_last=True)
-
-        current_step = "8) انتظار رابط النشر"
-        await update_msg("8) انتظار رابط النشر...")
+        # 3
+        await update_msg(2, "loading")
+        await console.step2_tos_and_country(page)
+        await update_msg(2, "success")
+        
+        # 4
+        await update_msg(3, "loading")
+        await console.step3_enable_api(page, project_id, authuser)
+        await update_msg(3, "success")
+        
+        # 5
+        await update_msg(4, "loading")
+        await console.step4_fill_fields(page, project_id, authuser, image_uri)
+        await update_msg(4, "success")
+        
+        # 6
+        await update_msg(5, "loading")
+        await console.step4_part2_crater(page)
+        await update_msg(5, "success")
+        
+        # 7
+        await update_msg(6, "loading")
         final_url = await console.step5_get_deployed_url(page)
-        await update_msg("8 ✅ Create", replace_last=True)
+        await update_msg(6, "success")
         
         domain = extract_domain_from_service_url(final_url)
         elapsed_time = int(time.time() - start_time)
@@ -130,25 +126,28 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         region = "us-central1"
         if "-" in domain:
             parts = domain.split("-")
-            if len(parts) > 2: region = f"{parts[-2]}-{parts[-1]}"
-
+            if len(parts) > 2: 
+                region = f"{parts[-2]}-{parts[-1]}"
+                
         return {"success": True, "domain": domain, "region": region, "time_taken": elapsed_time}
 
     except Exception as e:
         err_str = str(e)
-        log.error(f"❌ خطأ في {current_step}: {err_str}")
+        log.error(f"❌ خطأ: {err_str}")
         
-        if "SERVICE_EXISTS" in err_str:
-            # التقاط صورة فوراً قبل إغلاق الصفحة
-            await take_screenshot("❌ سبب التجمد: يوجد خدمة مفعلة بنفس اسم هذه الرابط")
-            await update_msg(f"⚠️ تجمد في مرحلة: {current_step} - الخدمة موجودة", is_final=True)
-            return {"success": False, "error": "الخدمة موجودة مسبقاً"}
-            
-        await update_msg(f"⚠️ تجمد في مرحلة: {current_step}", is_final=True)
-        if page and not page.is_closed():
-            await take_screenshot(f"❌ سبب التجمد:\n{err_str[:500]}\n\n📍 المرحلة: {current_step}")
-        
-        return {"success": False, "error": err_str}
+        if "EXPIRED_LINK" in err_str:
+            await take_screenshot("❌ رابط SSO منتهي الصلاحية")
+            return {"success": False, "error": "EXPIRED_LINK"}
+        elif "SERVICE_EXISTS" in err_str:
+            await take_screenshot("❌ يوجد خدمة مفعلة بنفس الاسم")
+            return {"success": False, "error": "SERVICE_EXISTS"}
+        elif "TIMEOUT_URL" in err_str:
+            await update_msg(6, "error")
+            await take_screenshot("❌ انتهى وقت الانتظار لرابط run.app")
+            return {"success": False, "error": "SERVICE_EXISTS"}
+        else:
+            await take_screenshot(f"❌ خطأ غير متوقع:\n{err_str[:300]}")
+            return {"success": False, "error": "UNKNOWN"}
     finally:
         if page:
             try: await page.close()

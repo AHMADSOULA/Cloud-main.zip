@@ -32,18 +32,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             try: await status_msg.edit_text(text)
             except: pass
 
-    # ✅ دالة التصوير
-    async def take_screenshot(caption_text):
-        if not page or page.is_closed(): return
-        try:
-            path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
-            await page.screenshot(path=path, full_page=False, type="jpeg", quality=70, timeout=5000)
-            with open(path, "rb") as f:
-                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption_text)
-            os.remove(path)
-        except Exception as e:
-            log.warning(f"⚠️ فشل إرسال صورة {caption_text}: {e}")
-
+    # ✅ التقاط التوكن
     def capture_token(request):
         nonlocal access_token
         if access_token: return
@@ -59,20 +48,18 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         page = await context.new_page()
         page.on("request", capture_token)
         
-        # ✅ الخطوة 1: فتح الرابط
+        # 1. فتح الرابط
         await update_msg("1) فتح رابط الطالب...")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
-        await page.wait_for_timeout(3000)
-        await take_screenshot("📸 الخطوة 1: فتح الرابط")
         
-        # ✅ الخطوة 2: تسجيل الدخول / الباسورد
+        # 2. الباسورد
         await update_msg("2) جاري تسجيل الدخول...")
+        await page.wait_for_timeout(3000)
         try:
             password_input = page.locator('input[type="password"]').first
             if await password_input.is_visible(timeout=3000):
                 if not password:
-                    await take_screenshot("📸 الخطوة 2: يتطلب كلمة سر")
                     return {"success": False, "error": "need_password"}
                 await password_input.fill(password)
                 await page.wait_for_timeout(500)
@@ -80,27 +67,25 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
                 await page.wait_for_timeout(5000)
         except Exception as e:
             log.info(f"تجاوز الباسورد: {e}")
-        await take_screenshot("📸 الخطوة 2: بعد تسجيل الدخول")
 
-        # ✅ الخطوة 3: التوجيهات (TOS)
+        # 3. التوجيهات
         await update_msg("3) قبول التوجيهات...")
         await console.step1_welcome_screen(page)
+        
         try:
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
-        await take_screenshot("📸 الخطوة 3: بعد قبول التوجيهات (TOS)")
 
-        # ✅ الخطوة 4: الشروط (Terms)
+        # 4. الشروط
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
-        await page.wait_for_timeout(2000)
-        await take_screenshot("📸 الخطوة 4: بعد قبول الشروط")
 
-        # --- استخراج التوكن والنشر ---
-        await update_msg("5) استخراج Token...")
+        # 5. استخراج التوكن
+        await update_msg("5) جاري استخراج الـ Token...")
         await page.wait_for_timeout(3000)
-        
+
+        # إجبار المتصفح على إرسال طلب باش نلتقطو التوكن
         if not access_token:
             try:
                 await page.evaluate("""
@@ -127,8 +112,9 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             except: pass
 
         if not access_token:
-            return {"success": False, "error": "❌ فشل استخراج Token."}
+            return {"success": False, "error": "❌ فشل استخراج Token. يرجى المحاولة مرة أخرى."}
 
+        # 6. النشر عبر API (هادي هي اللي كتعوض الواجهة)
         await update_msg("6) جاري النشر عبر API...")
         final_url = await asyncio.to_thread(deploy_cloud_run, project_id, access_token)
         domain = extract_domain_from_service_url(final_url)
@@ -139,7 +125,14 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         err_str = str(e)
         log.error(f"❌ خطأ: {err_str}")
         if page and not page.is_closed():
-            await take_screenshot(f"📸 تفاصيل الخطأ: {err_str[:100]}")
+            try:
+                await page.wait_for_timeout(2000)
+                path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
+                await page.screenshot(path=path, full_page=True, type="jpeg", quality=60, timeout=5000)
+                with open(path, "rb") as f:
+                    await bot.send_photo(chat_id=chat_id, photo=f)
+                os.remove(path)
+            except: pass
         return {"success": False, "error": err_str}
     finally:
         if page:

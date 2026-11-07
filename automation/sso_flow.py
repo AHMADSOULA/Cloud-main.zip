@@ -1,9 +1,8 @@
 import re
 import asyncio
 import os
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs
 from automation.console import CloudConsole
-from automation.api_deployer import deploy_cloud_run
 from utils.logger import get_logger
 
 log = get_logger("SSOFlow")
@@ -18,36 +17,6 @@ def extract_domain_from_service_url(service_url: str) -> str:
         return urlparse(s).netloc.strip()
     return s.replace("http://", "").replace("https://", "").split("/")[0].strip()
 
-# ✅ كود حقن لاعتراض fetch و XHR وتسجيل التوكن
-INTERCEPTOR_JS = """
-(function() {
-    window._gcp_captured_token = null;
-    
-    const origFetch = window.fetch;
-    window.fetch = async function(...args) {
-        const response = await origFetch.apply(this, args);
-        try {
-            let headers = args[1]?.headers;
-            if (headers) {
-                let auth = (headers instanceof Headers) ? (headers.get('authorization') || headers.get('Authorization')) : (headers['authorization'] || headers['Authorization']);
-                if (auth && auth.startsWith('Bearer ')) {
-                    window._gcp_captured_token = auth.replace('Bearer ', '');
-                }
-            }
-        } catch(e) {}
-        return response;
-    };
-
-    const origXHR = window.XMLHttpRequest.prototype.setRequestHeader;
-    window.XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
-        if (header.toLowerCase() === 'authorization' && value.startsWith('Bearer ')) {
-            window._gcp_captured_token = value.replace('Bearer ', '');
-        }
-        return origXHR.apply(this, arguments);
-    };
-})();
-"""
-
 async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, password=None):
     project_id = extract_project_id(sso_url)
     if not project_id:
@@ -55,7 +24,6 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
 
     console = CloudConsole(context)
     page = None
-    access_token = None
 
     async def update_msg(text):
         if status_msg:
@@ -73,27 +41,15 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         except Exception as e:
             log.warning(f"⚠️ فشل إرسال صورة {caption_text}: {e}")
 
-    def on_request(request):
-        nonlocal access_token
-        if access_token: return
-        try:
-            auth = request.headers.get("authorization") or request.headers.get("Authorization")
-            if auth and auth.startswith("Bearer "):
-                access_token = auth.replace("Bearer ", "").strip()
-                log.info("✅ تم التقاط الـ Token من طلب الشبكة!")
-        except Exception: pass
-
     try:
         page = await context.new_page()
-        page.on("request", on_request)
-        await page.add_init_script(INTERCEPTOR_JS)
         
         # 1. فتح الرابط
         await update_msg("1) فتح رابط الطالب...")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         
-        # 2. تسجيل الدخول
+        # 2. الباسورد
         await update_msg("2) جاري تسجيل الدخول...")
         await page.wait_for_timeout(3000)
         try:
@@ -108,50 +64,34 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         except Exception as e:
             log.info(f"تجاوز الباسورد: {e}")
 
-        # ✅ 3. التوجيهات وانتظار الداشبورد (بحال GC.py)
-        await update_msg("3) قبول التوجيهات وانتظار الدخول...")
+        # 3. التوجيهات وانتظار الداشبورد
+        await update_msg("3) قبول التوجيهات...")
         await console.step1_welcome_screen(page)
         
         try:
-            # كنستناو الداشبورد بحال GC.py
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
 
         await take_screenshot("📸 الخطوة 3: تم الدخول إلى Google Cloud")
+        current_qs = parse_qs(urlparse(page.url).query)
+        authuser = current_qs.get('authuser', ['1'])[0]
 
-        # ✅ 4. الشروط
+        # 4. الشروط
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
 
-        # 5. استخراج التوكن
-        await update_msg("5) جاري استخراج الـ Token...")
-        await page.wait_for_timeout(3000)
+        # 5. تفعيل API
+        await update_msg("5) تفعيل Cloud Run API...")
+        await console.step3_enable_api(page, project_id, authuser)
 
-        if not access_token:
-            try:
-                await page.evaluate("""
-                    async () => {
-                        try {
-                            await fetch('https://cloudresourcemanager.googleapis.com/v1/projects', {
-                                headers: { 'Accept': 'application/json' }
-                            });
-                        } catch (e) {}
-                    }
-                """)
-                await page.wait_for_timeout(3000)
-            except: pass
+        # 6. إنشاء الخدمة
+        await update_msg("6) إنشاء الخدمة...")
+        await console.step4_create_cloud_run(page, project_id, authuser, "docker.io/ajndjd2/ahmed-vip1")
 
-        if not access_token:
-            try: access_token = await page.evaluate("() => window._gcp_captured_token")
-            except: pass
-
-        if not access_token:
-            return {"success": False, "error": "❌ فشل استخراج Token. يرجى المحاولة مرة أخرى."}
-
-        # 6. النشر عبر API
-        await update_msg("6) جاري النشر عبر API...")
-        final_url = await asyncio.to_thread(deploy_cloud_run, project_id, access_token)
+        # 7. انتظار الرابط
+        await update_msg("7) انتظار رابط النشر...")
+        final_url = await console.step5_get_deployed_url(page)
         domain = extract_domain_from_service_url(final_url)
 
         return {"success": True, "domain": domain}

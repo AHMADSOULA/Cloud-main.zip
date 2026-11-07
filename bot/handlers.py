@@ -9,19 +9,20 @@ from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
 from bot import messages
-from bot.keyboards import main_menu, admin_menu
+from bot.keyboards import main_menu, admin_menu, ssh_countries_menu
 from database import db
 from utils.helpers import extract_urls
 from utils.logger import get_logger
 from config import config
 from automation.browser import StealthBrowser
-from automation.sso_flow import run_sso_flow, extract_email_from_url
+from automation.sso_flow import run_sso_flow, extract_email_from_url, extract_password_from_url
 
 log = get_logger("Handlers")
 
 # ═══════════════════════════════════════════
 # طابور (priority-based)
 # ═══════════════════════════════════════════
+
 class JobQueue:
     def __init__(self):
         self.queue = []
@@ -72,8 +73,45 @@ def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
 # ═══════════════════════════════════════════
+# /start
+# ═══════════════════════════════════════════
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await db.register_user(user.id, user.username or user.first_name)
+
+    if is_admin(user.id):
+        await update.message.reply_text(
+            messages.WELCOME_ADMIN,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu(is_admin=True),
+            disable_web_page_preview=True,
+        )
+        return
+
+    if await db.is_globally_stopped():
+        await update.message.reply_text("⛔ *البوت متوقف حالياً*\n\nرايح يرجع يخدم قريباً. جرب من بعد.", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    if await db.is_banned(user.id):
+        await update.message.reply_text("🚫 أنت محظور من البوت.")
+        return
+
+    if await db.has_access(user.id):
+        await update.message.reply_text(
+            messages.WELCOME_USER,
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=main_menu(is_admin=False),
+            disable_web_page_preview=True,
+        )
+        return
+
+    await update.message.reply_text(messages.WELCOME_PENDING, parse_mode=ParseMode.MARKDOWN, disable_web_page_preview=True)
+    await update.message.reply_text("🔒 *للحصول على صلاحية:*\n\nأرسل `/request` باش نرسلو طلبك للـ ADMIN.", parse_mode=ParseMode.MARKDOWN)
+
+# ═══════════════════════════════════════════
 # فحص نوع الرابط
 # ═══════════════════════════════════════════
+
 def is_full_sso_url(url: str) -> bool:
     u = (url or "").lower()
     if "skills.google/google_sso" in u: return True
@@ -93,7 +131,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
     if await db.is_globally_stopped() and not is_admin(user.id):
-        await update.message.reply_text("⛔ **البوت متوقف حالياً**\n\nجرب من بعد.", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("⛔ *البوت متوقف حالياً*\n\nجرب من بعد.", parse_mode=ParseMode.MARKDOWN)
         return
 
     if not await db.has_access(user.id):
@@ -107,34 +145,39 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     sso_url = urls[0]
 
+    if "skills.google" not in sso_url and "qwiklabs" not in sso_url and "accounts.google.com" not in sso_url:
+        await update.message.reply_text("⚠️ الرابط لا يبدو من Google Skills.")
+        return
+
     user_tag = f"@{user.username}" if user.username else f"@{user.first_name}"
+    
     u = await db.get_user(user.id)
     priority = (u.get("priority") or 0) if u else 0
 
-    # إذا كان رابط AddSession (يطلب كلمة سر)
+    # إذا كان رابط AddSession مباشر (يطلب كلمة سر)
     if is_direct_addsession_url(sso_url):
         email = extract_email_from_url(sso_url)
         if email:
             await db.set_session(user_id=user.id, sso_url=sso_url, state="waiting_password")
             await update.message.reply_text(
-                f"🔐 **مطلوب كلمة السر**\n\n"
+                f"🔐 *مطلوب كلمة السر*\n\n"
                 f"📧 الإيميل:\n`{email}`\n\n"
-                f"أرسل كلمة السر هنا.\n"
-                f"⚠️ تجمد في مرحلة password لأكثر من 3 دقائق سيتم تخطي دورك.",
+                f"أرسل كلمة السر هنا للبدء.\n"
+                f"⚠️ إذا تجمدت في مرحلة password لأكثر من 3 دقائق سيتم تخطي دورك.",
                 parse_mode=ParseMode.MARKDOWN
             )
-            # مؤقت 3 دقائق (180 ثانية) للتخطي
+            # تشغيل مؤقت 3 دقائق (180 ثانية)
             asyncio.create_task(password_timeout(user.id, update.effective_chat.id, context))
             return
         else:
-            await update.message.reply_text("⚠️ ما قدرناش نستخرجو الإيميل.")
+            await update.message.reply_text("⚠️ ما قدرناش نستخرجو الإيميل من الرابط.")
             return
 
-    # إذا كان رابط SSO كامل (Token موجود)
+    # إذا كان رابط SSO كامل (Token موجود - يسجل دخول تلقائي)
     if is_full_sso_url(sso_url):
         num = await queue.add(user.id, update.effective_chat.id, sso_url, user_tag, priority)
         pos = queue.position(user.id)
-        msg = f"📥 تم استلام الرابط رقم {num}."
+        msg = f"📥 تم استلام الرابط رقم {num} وسيدأ الآن."
         if pos > 1: msg += f"\n📍 موقعك في الطابور: {pos}"
         await update.message.reply_text(msg)
         asyncio.create_task(process_queue(update.effective_chat.id, context))
@@ -155,7 +198,10 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except: pass
 
     sso_url = session.get("sso_url")
-    if not sso_url: return
+    if not sso_url:
+        await update.message.reply_text("❌ ما لقيناش الرابط في الجلسة.")
+        return
+
     await db.clear_session(user.id)
 
     if "Password=" not in sso_url:
@@ -169,17 +215,17 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     num = await queue.add(user.id, update.effective_chat.id, sso_url, user_tag, priority)
     pos = queue.position(user.id)
     
-    msg = f"📥 تم استلام الرابط رقم {num}."
+    msg = f"📥 تم استلام الرابط رقم {num} وسيدأ الآن."
     if pos > 1: msg += f"\n📍 موقعك في الطابور: {pos}"
     await update.message.reply_text(msg)
 
     asyncio.create_task(process_queue(update.effective_chat.id, context))
 
 # ═══════════════════════════════════════════
-# مؤقت كلمة السر
+# مؤقت كلمة السر (3 دقائق)
 # ═══════════════════════════════════════════
 async def password_timeout(user_id, chat_id, context):
-    await asyncio.sleep(180) # 3 دقائق
+    await asyncio.sleep(180)
     session = await db.get_session(user_id)
     if session and session.get("state") == "waiting_password":
         await db.clear_session(user_id)
@@ -206,7 +252,6 @@ async def process_queue(chat_id, context):
             ctx = await browser.start()
 
             try:
-                # تشغيل SSO Flow (سيقوم بإرسال الخطوات 1 إلى 12 بنفسه)
                 result = await run_sso_flow(
                     ctx,
                     job["sso_url"],
@@ -216,12 +261,12 @@ async def process_queue(chat_id, context):
                 )
 
                 if not result.get("success"):
-                    error_msg = result.get("message", "فشل غير معروف")
+                    error_msg = result.get("message", "فشل")
                     try:
                         if "account_deleted" in error_msg or "منتهي" in error_msg:
-                            await status_msg.edit_text(f"⏳ تجمد في unknown\n\n⏭️ تم تخطي دورك بسبب التجمد. يمكنك إرسال الرابط مجدداً.")
+                            await status_msg.edit_text(f"[{job['user_tag']}] • ⏳ تجمد في unknown\n\n⏭️ تم تخطي دورك بسبب التجمد. يمكنك إرسال الرابط مجدداً.")
                         else:
-                            await status_msg.edit_text(f"❌ توقفنا\n\n{error_msg}")
+                            await status_msg.edit_text(f"[{job['user_tag']}] • ❌ توقفنا\n\n{error_msg}")
                     except: pass
                     return
 
@@ -255,4 +300,53 @@ async def process_queue(chat_id, context):
             if queue.queue_size() > 0:
                 asyncio.create_task(process_queue(job["chat_id"], context))
 
-# (باقي الأكواد الخاصة بـ /start و /admin كما هي في ملفك الأصلي...)
+# (باقي الأكواد الخاصة بـ /request و /status و /admin كما هي في ملفك الأصلي...)
+async def request_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if is_admin(user.id) or await db.has_access(user.id):
+        await update.message.reply_text("✅ عندك صلاحية.")
+        return
+    await db.add_request(user.id, user.username or user.first_name)
+    await update.message.reply_text("✅ تم إرسال طلبك للـ ADMIN.")
+    try:
+        await context.bot.send_message(
+            chat_id=config.ADMIN_ID,
+            text=f"📋 *طلب جديد*\n\n👤 {user.first_name}\n🔗 @{user.username or '-'}\n🆔 `{user.id}`",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+    except: pass
+
+async def status_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    jobs = await db.get_user_jobs(user.id, limit=5)
+    if not jobs:
+        await update.message.reply_text("📭 لا توجد مهام سابقة.")
+        return
+    lines = []
+    for jid, status, created in jobs:
+        emoji = {"pending": "⏳", "done": "✅", "failed": "❌", "running": "🔄"}.get(status, "❔")
+        lines.append(f"• `#{jid}` — {emoji} {status} — {created}")
+    await update.message.reply_text(f"📊 *آخر {len(jobs)} مهام:*\n\n" + "\n".join(lines), parse_mode=ParseMode.MARKDOWN)
+
+async def cancel_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    await db.clear_session(user.id)
+    await update.message.reply_text("🚫 تم الإلغاء.")
+
+async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start(update, context)
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    user = update.effective_user
+    data = query.data
+
+    if data == "status":
+        await status_cmd(update, context)
+        return
+    if data == "back_main":
+        if is_admin(user.id):
+            try: await query.message.edit_text(messages.WELCOME_ADMIN, parse_mode=ParseMode.MARKDOWN, reply_markup=main_menu(True))
+            except: pass
+        return

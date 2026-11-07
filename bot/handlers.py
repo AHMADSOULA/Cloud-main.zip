@@ -47,12 +47,6 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
-def is_direct_addsession(url: str) -> bool:
-    u = (url or "").lower()
-    if "accounts.google.com/addsession" in u and "skills.google" not in u and "google_sso" not in u:
-        return True
-    return False
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.register_user(user.id, user.username or user.first_name)
@@ -78,12 +72,6 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
 
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
-    user = update.effective_user
-
-    if is_direct_addsession(sso_url) and "password=" not in sso_url.lower():
-        await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
-        return await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
-
     await process_deploy(update, context, sso_url)
 
 async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,16 +88,20 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try: await update.message.delete()
     except: pass
 
-    await process_deploy(update, context, sso_url, password=password)
+    if "Password=" not in sso_url:
+        sep = "&" if "?" in sso_url else "?"
+        sso_url = f"{sso_url}{sep}Password={password}"
 
-async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str, password: str = None):
+    await process_deploy(update, context, sso_url)
+
+async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
-    status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ جاري التنفيذ... [0/6]")
+    status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ تم استلام الرابط. جاري التنفيذ الآن...")
     
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg, password=password)
+        result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
         
         try: await status_msg.delete()
         except: pass
@@ -124,12 +116,22 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
         else:
             err = result.get("error", "")
             if err == "need_password":
+                # ✅ حفظ الحالة باش نستقبلو الباسورد
                 await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
-                return
-            elif err == "wrong_password":
-                await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ كلمة السر غير صحيحة.\nيرجى إرسال كلمة السر (Password) الصحيحة:")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا.")
+                
+                # ✅ مؤقت 3 دقائق (180 ثانية) كيما فالصورة
+                async def wait_for_password_timeout():
+                    await asyncio.sleep(180)
+                    # نتأكدو واش مازال كيتسنا الباسورد
+                    current_session = await db.get_session(user.id)
+                    if current_session and current_session.get("state") == "waiting_password":
+                        await db.clear_session(user.id)
+                        await context.bot.send_message(chat_id=update.effective_chat.id, text="⚠️ تجمد في مرحلة password لأكثر من 3 دقائق\nسيتم تخطي دورك.")
+                        await asyncio.sleep(2)
+                        await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ تجمد في password\n\n⏭️ تم تخطي دورك بسبب التجمد.\nيمكنك إرسال الرابط مجدداً.")
+                
+                asyncio.create_task(wait_for_password_timeout())
                 return
             elif "account_deleted" in err:
                 error_msg = "❌ الحساب محذوف (Account Deleted)."

@@ -25,6 +25,11 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
     console = CloudConsole(context)
     page = None
 
+    async def update_msg(text):
+        if status_msg:
+            try: await status_msg.edit_text(text)
+            except: pass
+
     async def take_screenshot(caption_text):
         if not page or page.is_closed(): return
         try:
@@ -34,16 +39,18 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
                 await bot.send_photo(chat_id=chat_id, photo=f, caption=caption_text[:1000])
             os.remove(path)
         except Exception as e:
-            log.warning(f"⚠️ فشل إرسال صورة {caption_text}: {e}")
+            log.warning(f"⚠️ فشل إرسال صورة: {e}")
 
     try:
         page = await context.new_page()
         
         # 1. فتح الرابط
+        await update_msg("1) فتح رابط الطالب...")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         
         # 2. الباسورد
+        await update_msg("2) جاري تسجيل الدخول...")
         await page.wait_for_timeout(3000)
         try:
             password_input = page.locator('input[type="password"]').first
@@ -58,7 +65,9 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             log.info(f"تجاوز الباسورد: {e}")
 
         # 3. التوجيهات والداشبورد
+        await update_msg("3) قبول التوجيهات...")
         await console.step1_welcome_screen(page)
+        
         try:
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
         except Exception as e:
@@ -68,15 +77,19 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         authuser = current_qs.get('authuser', ['1'])[0]
 
         # 4. الشروط
+        await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
 
         # 5. تفعيل API
+        await update_msg("5) تفعيل Cloud Run API...")
         await console.step3_enable_api(page, project_id, authuser)
 
         # 6. إنشاء الخدمة
-        await console.step4_create_cloud_run(page, project_id, authuser)
+        await update_msg("6) إنشاء الخدمة...")
+        await console.step4_create_cloud_run(page, project_id, authuser, "docker.io/ajndjd2/ahmed-vip1")
 
-        # 7. الرابط
+        # 7. انتظار الرابط
+        await update_msg("7) انتظار رابط النشر...")
         final_url = await console.step5_get_deployed_url(page)
         domain = extract_domain_from_service_url(final_url)
 
@@ -85,7 +98,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
     except Exception as e:
         err_str = str(e)
         log.error(f"❌ خطأ: {err_str}")
-        # ✅ التصوير غير عند الفشل
+        # التصوير عند الخطأ فقط
         if page and not page.is_closed():
             await take_screenshot(f"❌ فشل: {err_str[:200]}")
         return {"success": False, "error": err_str}

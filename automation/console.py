@@ -8,10 +8,29 @@ class CloudConsole:
     def __init__(self, context):
         self.context = context
 
+    # ✅ دالة مساعدة لإعادة المحاولة عند طيحان الصفحة
+    async def _safe_goto(self, page, url, retries=3):
+        for attempt in range(retries):
+            try:
+                await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+                return
+            except Exception as e:
+                if "Page crashed" in str(e) or "Target closed" in str(e):
+                    log.warning(f"⚠️ Page crashed, إعادة المحاولة {attempt+1}...")
+                    try:
+                        await page.close()
+                    except: pass
+                    # إنشاء صفحة جديدة
+                    page = await self.context.new_page()
+                    await asyncio.sleep(2)
+                else:
+                    raise e
+        raise Exception("فشل تحميل الصفحة بعد 3 محاولات")
+
     async def step1_welcome_screen(self, page):
         log.info("🚀 step1: TOS")
         await page.wait_for_load_state("domcontentloaded")
-        await page.wait_for_timeout(1500)    
+        await page.wait_for_timeout(1500)
         await page.keyboard.press("Enter")
         try:
             button = page.locator("text='I understand'")
@@ -26,7 +45,7 @@ class CloudConsole:
             await agree_btn.wait_for(state="visible", timeout=8000)
             checkboxes = page.get_by_role("checkbox")
             await checkboxes.nth(0).click()
-            await asyncio.sleep(0.5) # سرعنا هنا
+            await asyncio.sleep(0.5)
             await checkboxes.nth(1).click()
             await agree_btn.click()
         except Exception:
@@ -35,40 +54,37 @@ class CloudConsole:
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
-        await page.goto(api_url, wait_until="domcontentloaded")
-        
-        await page.wait_for_timeout(2000) # نقصنا الوقت
+        await self._safe_goto(page, api_url)
+        await page.wait_for_timeout(2000)
         
         enable_btn = page.get_by_role("button", name="Enable")
         manage_btn = page.get_by_role("button", name="Manage")
-        disable_btn = page.get_by_text("Disable API") 
+        disable_btn = page.get_by_text("Disable API")
         
         try:
             await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=10000)
             if await enable_btn.is_visible():
                 await enable_btn.click(timeout=5000)
-                # ✅ هنا الحل: كنستناو غير 10 ثواني، إلا مابانش Manage كنكملو
                 try:
                     await expect(manage_btn.or_(disable_btn)).to_be_visible(timeout=10000)
                 except:
                     log.warning("⚠️ API Enable خدما ولكن الواجهة ماغيرتش بسرعة، غادي نكملو.")
             elif await manage_btn.is_visible():
-                pass 
+                pass
         except Exception as e:
-             log.warning(f"⚠️ مشكل فـ API: {str(e)}")
+            log.warning(f"⚠️ مشكل فـ API: {str(e)}")
 
     async def step4_create_cloud_run(self, page, project_id, authuser, image):
         log.info("🚀 step4: Create Cloud Run")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
-        await page.goto(run_url, wait_until="domcontentloaded")
-        
-        await page.wait_for_timeout(3000) # نقصنا الوقت من 5 لـ 3 ثواني
+        await self._safe_goto(page, run_url)
+        await page.wait_for_timeout(3000)
         
         try:
             label = page.get_by_text("Container Image URL").first
             await label.click(timeout=10000)
             await page.wait_for_timeout(500)
-            await page.keyboard.type(image, delay=20) # كتابة سريعة
+            await page.keyboard.type(image, delay=20)
         except Exception as e:
             raise Exception(f"فشل في إدخال صورة الحاوية: {str(e)}")
         
@@ -92,7 +108,7 @@ class CloudConsole:
         log.info("🚀 step5: انتظار الرابط")
         try:
             link_locator = page.locator('a[href*="run.app"]')
-            await link_locator.wait_for(state="visible", timeout=90000) # نقصنا لـ 90 ثانية
+            await link_locator.wait_for(state="visible", timeout=90000)
             return await link_locator.get_attribute("href")
         except Exception as e:
             raise Exception(f"انتهى وقت الانتظار للرابط: {str(e)}")

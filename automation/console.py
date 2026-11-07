@@ -8,21 +8,20 @@ class CloudConsole:
     def __init__(self, context):
         self.context = context
 
-    # ✅ دالة مساعدة لإعادة المحاولة عند طيحان الصفحة
+    # ✅ دالة آمنة باش ما يطيحش البوت إلا طاحت الصفحة
     async def _safe_goto(self, page, url, retries=3):
         for attempt in range(retries):
             try:
                 await page.goto(url, wait_until="domcontentloaded", timeout=60000)
-                return
+                return page
             except Exception as e:
-                if "Page crashed" in str(e) or "Target closed" in str(e):
-                    log.warning(f"⚠️ Page crashed, إعادة المحاولة {attempt+1}...")
+                if "Target closed" in str(e) or "Page crashed" in str(e):
+                    log.warning(f"⚠️ الصفحة طاحت، إعادة المحاولة {attempt+1}...")
+                    await asyncio.sleep(2)
                     try:
                         await page.close()
                     except: pass
-                    # إنشاء صفحة جديدة
                     page = await self.context.new_page()
-                    await asyncio.sleep(2)
                 else:
                     raise e
         raise Exception("فشل تحميل الصفحة بعد 3 محاولات")
@@ -54,7 +53,9 @@ class CloudConsole:
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
-        await self._safe_goto(page, api_url)
+        
+        # ✅ كنستعملو الدالة الآمنة
+        page = await self._safe_goto(page, api_url)
         await page.wait_for_timeout(2000)
         
         enable_btn = page.get_by_role("button", name="Enable")
@@ -73,11 +74,15 @@ class CloudConsole:
                 pass
         except Exception as e:
             log.warning(f"⚠️ مشكل فـ API: {str(e)}")
+            
+        return page # نرجعو الصفحة ممكن تكون تبدلت
 
     async def step4_create_cloud_run(self, page, project_id, authuser, image):
         log.info("🚀 step4: Create Cloud Run")
         run_url = f"https://console.cloud.google.com/run/create?project={project_id}&authuser={authuser}"
-        await self._safe_goto(page, run_url)
+        
+        # ✅ كنستعملو الدالة الآمنة
+        page = await self._safe_goto(page, run_url)
         await page.wait_for_timeout(3000)
         
         try:
@@ -103,6 +108,8 @@ class CloudConsole:
             await create_btn.click(force=True)
         except Exception as e:
             raise Exception(f"فشل في ضغط Create: {str(e)}")
+            
+        return page
 
     async def step5_get_deployed_url(self, page):
         log.info("🚀 step5: انتظار الرابط")

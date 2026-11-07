@@ -18,12 +18,11 @@ def extract_domain_from_service_url(service_url: str) -> str:
         return urlparse(s).netloc.strip()
     return s.replace("http://", "").replace("https://", "").split("/")[0].strip()
 
-# ✅ كود اعتراض التوكن
+# ✅ كود حقن لاعتراض fetch و XHR وتسجيل التوكن
 INTERCEPTOR_JS = """
 (function() {
     window._gcp_captured_token = null;
     
-    // اعتراض fetch
     const origFetch = window.fetch;
     window.fetch = async function(...args) {
         const response = await origFetch.apply(this, args);
@@ -39,7 +38,6 @@ INTERCEPTOR_JS = """
         return response;
     };
 
-    // اعتراض XHR
     const origXHR = window.XMLHttpRequest.prototype.setRequestHeader;
     window.XMLHttpRequest.prototype.setRequestHeader = function(header, value) {
         if (header.toLowerCase() === 'authorization' && value.startsWith('Bearer ')) {
@@ -57,15 +55,54 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
 
     console = CloudConsole(context)
     page = None
+    access_token = None
 
     async def update_msg(text):
         if status_msg:
             try: await status_msg.edit_text(text)
             except: pass
 
+    async def take_screenshot(caption_text):
+        if not page or page.is_closed(): return
+        try:
+            path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
+            await page.screenshot(path=path, full_page=False, type="jpeg", quality=70, timeout=5000)
+            with open(path, "rb") as f:
+                await bot.send_photo(chat_id=chat_id, photo=f, caption=caption_text)
+            os.remove(path)
+        except Exception as e:
+            log.warning(f"⚠️ فشل إرسال صورة {caption_text}: {e}")
+
+    # ✅ التقاط التوكن من الاستجابات (أكثر طريقة موثوقة)
+    async def on_response(response):
+        nonlocal access_token
+        if access_token: return
+        try:
+            if "oauth2" in response.url or "token" in response.url:
+                if response.status == 200:
+                    data = await response.json()
+                    if isinstance(data, dict):
+                        token = data.get("access_token") or data.get("id_token")
+                        if token:
+                            access_token = token
+                            log.info("✅ تم التقاط الـ Token من استجابة الشبكة!")
+        except: pass
+
+    def on_request(request):
+        nonlocal access_token
+        if access_token: return
+        try:
+            auth = request.headers.get("authorization") or request.headers.get("Authorization")
+            if auth and auth.startswith("Bearer "):
+                access_token = auth.replace("Bearer ", "").strip()
+                log.info("✅ تم التقاط الـ Token من طلب الشبكة!")
+        except: pass
+
     try:
         page = await context.new_page()
-        # ✅ نحقنو كود الاعتراض قبل ما نفتحو أي صفحة
+        # ✅ نسجلو المستمعين قبل أي حركة
+        page.on("request", on_request)
+        page.on("response", on_response)
         await page.add_init_script(INTERCEPTOR_JS)
         
         # 1. فتح الرابط
@@ -97,6 +134,9 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
 
+        # ✅ التصوير فور الدخول للوحة التحكم
+        await take_screenshot("📸 الخطوة 3: تم الدخول إلى لوحة تحكم Google Cloud")
+
         # 4. الشروط
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
@@ -105,26 +145,37 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         await update_msg("5) جاري استخراج الـ Token...")
         await page.wait_for_timeout(3000)
 
-        # إجبار المتصفح على إرسال طلب باش نلتقطو التوكن
-        try:
-            await page.evaluate("""
-                async () => {
-                    try {
-                        await fetch('https://cloudresourcemanager.googleapis.com/v1/projects', {
-                            headers: { 'Accept': 'application/json' }
-                        });
-                    } catch (e) {}
-                }
-            """)
-            await page.wait_for_timeout(3000)
-        except: pass
-
-        # ✅ قراءة التوكن من المتغير اللي حقناه
-        access_token = await page.evaluate("() => window._gcp_captured_token")
-        
+        # نجبرو المتصفح يصيفط طلب باش نلتقطو التوكن من الشبكة
         if not access_token:
             try:
-                access_token = await page.evaluate("() => window.gapi.auth.getToken().access_token")
+                await page.evaluate("""
+                    async () => {
+                        try {
+                            await fetch('https://cloudresourcemanager.googleapis.com/v1/projects', {
+                                headers: { 'Accept': 'application/json' }
+                            });
+                        } catch (e) {}
+                    }
+                """)
+                await page.wait_for_timeout(3000)
+            except: pass
+
+        # ✅ الحل الاحتياطي: من المتغير اللي حقناه
+        if not access_token:
+            try:
+                access_token = await page.evaluate("() => window._gcp_captured_token")
+            except: pass
+
+        # ✅ الحل الاحتياطي الأخير: من window.gapi
+        if not access_token:
+            try:
+                access_token = await page.evaluate("""
+                    () => {
+                        try { return window.gapi.auth.getToken().access_token; } catch(e) {}
+                        try { return window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token; } catch(e) {}
+                        return null;
+                    }
+                """)
             except: pass
 
         if not access_token:
@@ -141,14 +192,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         err_str = str(e)
         log.error(f"❌ خطأ: {err_str}")
         if page and not page.is_closed():
-            try:
-                await page.wait_for_timeout(2000)
-                path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
-                await page.screenshot(path=path, full_page=True, type="jpeg", quality=60, timeout=5000)
-                with open(path, "rb") as f:
-                    await bot.send_photo(chat_id=chat_id, photo=f)
-                os.remove(path)
-            except: pass
+            await take_screenshot(f"📸 تفاصيل الخطأ: {err_str[:100]}")
         return {"success": False, "error": err_str}
     finally:
         if page:

@@ -34,28 +34,9 @@ WebGLRenderingContext.prototype.getParameter = function(parameter) {
 };
 
 // 5. chrome runtime
-window.chrome = { 
-    runtime: {},
-    loadTimes: function() {}, 
-    csi: function() {}, 
-    app: { isInstalled: false } 
-};
+window.chrome = { runtime: {}, loadTimes: function() {}, csi: function() {}, app: { isInstalled: false } };
 
 // 6. screen
 Object.defineProperty(screen, 'width', { get: () => 1920 });
 Object.defineProperty(screen, 'height', { get: () => 1080 });
-Object.defineProperty(screen, 'availWidth', { get: () => 1920 });
-Object.defineProperty(screen, 'availHeight', { get: () => 1040 });
-
-// 7. Permissions (Google uses this to detect headless)
-const originalQuery = window.navigator.permissions.query;
-window.navigator.permissions.query = (parameters) => (
-    parameters.name === 'notifications' ?
-        Promise.resolve({ state: Notification.permission }) :
-        originalQuery(parameters)
-);
-
-// 8. Hairline features
-Object.defineProperty(document, 'hidden', { get: () => false });
-Object.defineProperty(document, 'visibilityState', { get: () => 'visible' });
 """

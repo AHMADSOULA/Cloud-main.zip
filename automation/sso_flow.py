@@ -1,5 +1,6 @@
 import re
 import asyncio
+import os
 from urllib.parse import urlparse, parse_qs
 from automation.console import CloudConsole
 from utils.logger import get_logger
@@ -18,6 +19,25 @@ def extract_domain_from_service_url(service_url: str) -> str:
 
 def _has_password(url: str) -> bool:
     return "password=" in (url or "").lower()
+
+async def _is_blocked(page) -> str:
+    """نتحققو واش الحساب محذوف ولا الرابط منتهي"""
+    try:
+        url = page.url.lower()
+        if "accountdeleted" in url or "deletedaccount" in url: 
+            return "account_deleted"
+        
+        result = await page.evaluate("""
+            () => {
+                const body = (document.body.innerText || '').toLowerCase();
+                if (body.includes('account deleted') || body.includes('account has been deleted')) return 'account_deleted';
+                if (body.includes('session expired') || body.includes('invalid link')) return 'expired';
+                return null;
+            }
+        """)
+        return result
+    except: 
+        return None
 
 async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_msg=None) -> dict:
     project_id = extract_project_id(sso_url)
@@ -45,6 +65,12 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         
+        # ✅ فحص فوري للحساب المحذوف
+        await page.wait_for_timeout(3000)
+        blocked = await _is_blocked(page)
+        if blocked:
+            raise Exception(blocked)
+
         # 2
         await update_status(2, "قبول التوجيهات")
         await console.step1_welcome_screen(page)
@@ -53,6 +79,11 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard بـ URL: {e}")
+
+        # ✅ فحص بعد التوجيهات
+        blocked = await _is_blocked(page)
+        if blocked:
+            raise Exception(blocked)
 
         current_qs = parse_qs(urlparse(page.url).query)
         authuser = current_qs.get('authuser', ['1'])[0]
@@ -77,20 +108,22 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
         return {"success": True, "domain": domain}
 
     except Exception as e:
-        log.error(f"❌ فشل في الخطوة {current_step}: {e}")
-        # التصوير عند الخطأ فقط
+        err_str = str(e)
+        log.error(f"❌ فشل في الخطوة {current_step}: {err_str}")
+        
+        # ✅ التصوير مضمون 100% إلا كانت الصفحة مازال مفتوحة
         if page and not page.is_closed():
             try:
                 path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
                 await page.screenshot(path=path, full_page=True, type="jpeg", quality=60, timeout=5000)
                 with open(path, "rb") as f:
-                    await bot.send_photo(chat_id=chat_id, photo=f)
-                import os
+                    # كتصيفط الصورة مع وصف المشكل
+                    await bot.send_photo(chat_id=chat_id, photo=f, caption=f"❌ تفاصيل المشكل:\n{err_str}")
                 os.remove(path)
             except Exception as shot_err:
                 log.error(f"فشل التصوير: {shot_err}")
         
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": err_str}
     finally:
         if page:
             try: await page.close()

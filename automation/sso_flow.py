@@ -27,6 +27,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
     page = None
     start_time = time.time()
     
+    # قائمة الخطوات السبع المطلوبة
     steps = [
         "فتح رابط",
         "تسجيل دخول",
@@ -38,7 +39,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
     ]
     
     async def update_msg(step_idx, status="loading"):
-        lines = []
+        lines = ["✅ تم استلام الرابط. جاري التنفيذ الآن...\n"]
         for i, s in enumerate(steps):
             if i < step_idx:
                 lines.append(f"{s} ✅")
@@ -49,11 +50,9 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
                     lines.append(f"{s} ✅")
                 elif status == "error":
                     lines.append(f"{s} ❌")
-            else:
-                break
         text = "\n".join(lines)
         try:
-            await status_msg.edit(text)
+            await status_msg.edit_text(text)
         except Exception:
             pass
 
@@ -71,7 +70,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
     try:
         page = await context.new_page()
         
-        # 1
+        # 1. فتح رابط
         await update_msg(0, "loading")
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
@@ -82,7 +81,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
             raise Exception("EXPIRED_LINK")
         await update_msg(0, "success")
         
-        # 2
+        # 2. تسجيل دخول
         await update_msg(1, "loading")
         await console.step1_welcome_screen(page)
         try:
@@ -95,27 +94,27 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg, image_ur
         authuser = current_qs.get('authuser', ['1'])[0]
         await update_msg(1, "success")
         
-        # 3
+        # 3. موافقة شروط
         await update_msg(2, "loading")
         await console.step2_tos_and_country(page)
         await update_msg(2, "success")
         
-        # 4
+        # 4. تفعيل API
         await update_msg(3, "loading")
         await console.step3_enable_api(page, project_id, authuser)
         await update_msg(3, "success")
         
-        # 5
+        # 5. تعبئة حقول
         await update_msg(4, "loading")
         await console.step4_fill_fields(page, project_id, authuser, image_uri)
         await update_msg(4, "success")
         
-        # 6
+        # 6. Crater
         await update_msg(5, "loading")
         await console.step4_part2_crater(page)
         await update_msg(5, "success")
         
-        # 7
+        # 7. انتظار الرابط
         await update_msg(6, "loading")
         final_url = await console.step5_get_deployed_url(page)
         await update_msg(6, "success")

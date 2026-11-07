@@ -6,11 +6,13 @@ load_dotenv()
 
 class Config:
     BOT_TOKEN = os.getenv("BOT_TOKEN")
+    WEBHOOK_URL = os.getenv("WEBHOOK_URL", "").rstrip("/")
+    WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
     ADMIN_ID = int(os.getenv("ADMIN_ID", "7119011124"))
 
     DEFAULT_IMAGE = os.getenv("DEFAULT_IMAGE", "docker.io/ajndjd2/ahmed-vip1")
 
-    # ✅ HEADLESS = True (بلا Xvfb)
+    # Headless Chromium for Cloud Run
     HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
     CHROME_PROFILE_DIR = os.getenv("CHROME_PROFILE_DIR", "/tmp/chrome_profile")
     PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "60")) * 1000

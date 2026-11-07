@@ -71,7 +71,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     default_image = "docker.io/ajndjd2/ahmed-vip1"
     
-    # ✅ بدا التنفيذ فـ صمت (بلا رسالة ترحيبية)
+    # بدا التنفيذ فـ صمت
     asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, update.effective_message, context))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,7 +129,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            # ✅ هنا كنعرضو الرسائل اللي كتجي تحت الصورة اللي تصيفطات من sso_flow
             if err_code == "service_already_exists":
                 error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
             elif err_code == "account_deleted":
@@ -138,8 +137,6 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
                 error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
             elif err_code == "image_field_empty": 
                 error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
-            elif err_code == "browser_crashed":
-                error_msg = "❌ المتصفح طاح (Browser Crashed).\nيرجى إعادة المحاولة برابط جديد."
             else: 
                 error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
                 

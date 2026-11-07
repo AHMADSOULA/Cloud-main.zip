@@ -35,9 +35,16 @@ class CloudConsole:
 
     async def step3_enable_api(self, page, project_id, authuser):
         api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
-        await page.goto(api_url, wait_until="domcontentloaded")
+        try:
+            await page.goto(api_url, wait_until="domcontentloaded", timeout=60000)
+        except Exception as e:
+            if "crashed" in str(e).lower():
+                log.warning("⚠️ الصفحة انهارت أثناء فتح API، محاولة مرة أخرى...")
+                await page.goto(api_url, wait_until="domcontentloaded", timeout=60000)
+            else:
+                raise e
+                
         await page.wait_for_timeout(3000)
-        
         enable_btn = page.get_by_role("button", name="Enable")
         manage_btn = page.get_by_role("button", name="Manage")
         
@@ -51,15 +58,13 @@ class CloudConsole:
 
     async def step4_create_cloud_run(self, page, project_id, authuser, image):
         try:
-            # محاولة إيجاد الحقل بطرق مختلفة
             label = page.get_by_text("Container Image URL").first
             await label.wait_for(state="visible", timeout=20000)
             await label.click(timeout=10000)
             await page.wait_for_timeout(500)
             await page.keyboard.type(image, delay=50)
         except Exception as e:
-            # إلا ما لقاش الحقل، يرمي خطأ واضح
-            raise Exception(f"فشل إدخال صورة الحاوية. تحقق من سرعة النت أو تغيير الواجهة. ({str(e)[:100]})")
+            raise Exception(f"فشل إدخال صورة الحاوية: {str(e)[:100]}")
         
         await page.wait_for_timeout(3000)
         
@@ -74,13 +79,22 @@ class CloudConsole:
             
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=15000)
+            
+            # التحقق من خطأ "الخدمة موجودة مسبقاً"
+            await page.wait_for_timeout(3000) # انتظار ظهور الخطأ
+            error_msg = page.get_by_text("Service with this name already exists")
+            if await error_msg.is_visible(timeout=5000):
+                raise Exception("SERVICE_EXISTS")
+                
         except Exception as e:
-            raise Exception(f"فشل ضغط زر Create: {str(e)[:100]}")
+            if "SERVICE_EXISTS" in str(e):
+                raise e
+            raise Exception(f"فشل ضغط Create: {str(e)[:100]}")
 
     async def step5_get_deployed_url(self, page):
         try:
             link_locator = page.locator('a[href*="run.app"]')
             await link_locator.wait_for(state="visible", timeout=120000) 
             return await link_locator.get_attribute("href")
-        except Exception as e:
-            raise Exception(f"انتهى الوقت بدون ظهور رابط الخدمة (120 ثانية)")
+        except Exception:
+            raise Exception("انتهى الوقت بدون ظهور رابط الخدمة (120 ثانية)")

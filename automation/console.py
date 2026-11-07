@@ -12,7 +12,6 @@ class CloudConsole:
         self.user_tag = user_tag or "@user"
 
     async def _shot(self, page, caption: str = ""):
-        """تصوير الشاشة وإرسالها (بلا كابسيون إلا طلبنا)"""
         if not self.sender: return
         try:
             if not page or page.is_closed(): return
@@ -100,6 +99,16 @@ class CloudConsole:
 
         await page.wait_for_timeout(5000)
 
+        # ✅ فحص مبكر قبل إدخال الحاوية
+        error_text = await page.evaluate("""
+            () => {
+                const body = document.body.innerText.toLowerCase();
+                if (body.includes('service with this name already exists') || body.includes('already exists')) return 'service_already_exists';
+                return null;
+            }
+        """)
+        if error_text: raise RuntimeError(error_text)
+
         try:
             label = page.get_by_text("Container Image URL").first
             await label.click(timeout=15000)
@@ -124,22 +133,33 @@ class CloudConsole:
 
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=10000)
+            log.info("✅ Create clicked")
         except Exception as e:
             log.error(f"❌ فشل في ضغط Create: {e}")
             raise RuntimeError("step4_failed")
 
-        # ✅ فحص سريع لخطأ "الخدمة كاينة"
-        for _ in range(8):
-            await page.wait_for_timeout(500)
-            error_text = await page.evaluate("""
-                () => {
-                    const body = document.body.innerText.toLowerCase();
-                    if (body.includes('already exists') || body.includes('service with this name')) return 'service_already_exists';
-                    return null;
-                }
-            """)
-            if error_text: raise RuntimeError(error_text)
-            if "run/create" not in page.url: return
+        # ✅ الفحص السريع (كل ثانية) باش نمسكو الخطأ فوراً وميطولش
+        for _ in range(10): 
+            await page.wait_for_timeout(1000)
+            try:
+                error_text = await page.evaluate("""
+                    () => {
+                        const body = document.body.innerText.toLowerCase();
+                        if (body.includes('already exists') || body.includes('service with this name')) return 'service_already_exists';
+                        if (body.includes('make sure all fields are correct') || body.includes('container image url is required')) return 'invalid_docker_image';
+                        return null;
+                    }
+                """)
+                if error_text:
+                    log.error(f"❌ خطأ: {error_text}")
+                    raise RuntimeError(error_text)
+                
+                if "run/create" not in page.url:
+                    return # نجح
+            except Exception as e:
+                if "service_already_exists" in str(e) or "invalid_docker_image" in str(e):
+                    raise
+                pass
 
         raise RuntimeError("invalid_docker_image")
 

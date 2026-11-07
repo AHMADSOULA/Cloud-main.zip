@@ -17,7 +17,8 @@ class CloudConsole:
             button = page.locator("text='I understand'")
             if await button.is_visible(timeout=3000):
                 await button.click()
-        except: pass
+        except:
+            pass
         await page.wait_for_load_state("networkidle")
 
     async def step2_tos_and_country(self, page):
@@ -61,37 +62,32 @@ class CloudConsole:
         await page.wait_for_timeout(5000)
         
         try:
-            # ✅ حل مشكل mat-label: كنقلبو على الـ input الحقيقي
-            image_input = page.locator('input[aria-label*="Container Image URL" i], input[placeholder*="Container Image URL" i]').first
-            await image_input.wait_for(state="visible", timeout=10000)
-            await image_input.click()
+            label = page.get_by_text("Container Image URL").first
+            await label.click(timeout=15000)
             await page.wait_for_timeout(500)
             await page.keyboard.type(image, delay=50)
         except Exception as e:
-            # احتياط: نجربو طريقة GC.py القديمة
-            try:
-                label = page.get_by_text("Container Image URL").first
-                await label.click(timeout=10000)
-                await page.wait_for_timeout(500)
-                await page.keyboard.type(image, delay=50)
-            except Exception as e2:
-                raise Exception(f"فشل في إدخال صورة الحاوية: {str(e2)}")
+            raise Exception(f"فشل في الضغط وكتابة الرابط: {str(e)}")
         
         await page.wait_for_timeout(3000)
         
         try:
             await page.get_by_role("radio", name="Allow public access").click()
             await page.get_by_role("radio", name="Instance-based").click()
+            
             try:
                 await page.get_by_role("button", name="Hide").click(timeout=2000)
-            except: pass
+            except:
+                pass
+                
             await page.keyboard.press("End")
             await page.wait_for_timeout(1000)
             
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True)
+            
         except Exception as e:
-            raise Exception(f"فشل في ضغط Create: {str(e)}")
+            raise Exception(f"فشل في اختيار الإعدادات أو ضغط Create: {str(e)}")
 
     async def step5_get_deployed_url(self, page):
         log.info("🚀 step5: انتظار الرابط")

@@ -64,7 +64,7 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     urls = extract_urls(text)
     if urls:
-        # ✅ التعديل: كنطلقو النشر فـ الخلفية باش البوت ما يتبلوكاش
+        # ✅ كنطلقو النشر فـ الخلفية باش البوت يبقى سريع
         asyncio.create_task(process_deploy(update, context, urls[0]))
         return
         
@@ -88,7 +88,12 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str, password: str = None):
     user = update.effective_user
-    status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="✅ تم استلام الرابط. جاري التنفيذ...")
+    
+    # ✅ رسالة ترحيبية
+    status_msg = await context.bot.send_message(
+        chat_id=update.effective_chat.id, 
+        text="⏳ يرجى الانتظار دقيقة أو دقائق، سيكتمل نشر الخدمة قريباً..."
+    )
     
     browser = StealthBrowser()
     try:
@@ -101,6 +106,16 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
         if result.get("success"):
             domain = result.get("domain")
             new_uri = build_darktunnel_uri_with_host(domain)
+            
+            # ✅ إرسال الرابط
+            clean_url = f"https://{domain}"
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id, 
+                text=f"✅ تم النشر بنجاح!\n\n🌐 الرابط:\n`{clean_url}`", 
+                parse_mode=ParseMode.MARKDOWN
+            )
+            
+            # ✅ إرسال الملف
             if new_uri:
                 safe_domain = re.sub(r"[^a-z0-9\.\-]+", "_", domain.lower()).strip("_")
                 tg_fname = f"زين و اسيا مجاني - {safe_domain}.dark"
@@ -111,15 +126,15 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
             err = result.get("error", "")
             if err == "need_password":
                 await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
-                await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا.")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 مطلوب كلمة السر\n\nأرسل كلمة السر هنا:")
                 return
             else:
-                await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nالسبب: `{err[:300]}`")
+                await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nالسبب: `{err[:300]}`", parse_mode=ParseMode.MARKDOWN)
                 
     except Exception as e:
         try: await status_msg.delete()
         except: pass
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nخطأ: `{str(e)[:300]}`")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ توقف الخدمة\nخطأ: `{str(e)[:300]}`", parse_mode=ParseMode.MARKDOWN)
     finally:
         await browser.close()
 

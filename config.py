@@ -10,6 +10,7 @@ class Config:
 
     DEFAULT_IMAGE = os.getenv("DEFAULT_IMAGE", "docker.io/ajndjd2/ahmed-vip1")
 
+    # ✅ HEADLESS = True (بلا Xvfb)
     HEADLESS = os.getenv("HEADLESS", "true").lower() == "true"
     CHROME_PROFILE_DIR = os.getenv("CHROME_PROFILE_DIR", "/tmp/chrome_profile")
     PAGE_TIMEOUT = int(os.getenv("PAGE_TIMEOUT", "60")) * 1000

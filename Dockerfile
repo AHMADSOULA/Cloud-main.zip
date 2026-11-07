@@ -5,9 +5,8 @@ ENV PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-# ✅ زيادة الذاكرة المشتركة (shm) لحل مشكل Page crashed
-# (في Railway، استعمل إعدادات shm_size في dashboard إن أمكن، أو استعمل هذا الحل الاحتياطي)
-RUN echo "none /dev/shm tmpfs defaults,size=512m 0 0" >> /etc/fstab || true
+# ✅ تركيب xvfb باش نقدرو نخدمو headless=False
+RUN apt-get update && apt-get install -y xvfb && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -15,4 +14,5 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 COPY . .
 
-CMD ["python", "main.py"]
+# ✅ تشغيل البوت داخل شاشة وهمية (مهم جداً)
+CMD ["xvfb-run", "-a", "python", "main.py"]

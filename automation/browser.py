@@ -20,20 +20,21 @@ class StealthBrowser:
         self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
         log.info(f"📁 Using fresh profile: {self.profile_dir}")
 
-        # ✅ أعلام لتقليل استهلاك الذاكرة ومنع الطيحان
+        # ✅ أوامر مستقرة لتقليل الذاكرة ومنع الطيحان بلا ما نستعملو single-process
         args = [
             "--no-sandbox",
             "--disable-setuid-sandbox",
             "--disable-blink-features=AutomationControlled",
             "--disable-infobars",
-            "--disable-dev-shm-usage",      # ✅ مهم جداً: يستعمل /tmp بدل /dev/shm
-            "--disable-gpu",                # ✅ تقليل استهلاك الذاكرة
+            "--disable-dev-shm-usage",      # مهم جداً فـ السيرفر
+            "--disable-gpu",
             "--disable-software-rasterizer",
             "--disable-accelerated-2d-canvas",
-            "--no-zygote",
-            "--single-process",            # ✅ يمنع تعدد العمليات ويقلل الذاكرة (قد يقلل الاستقرار ولكن يمنع الطيحان)
-            "--js-flags=--max-old-space-size=512", # ✅ حد أقصى للذاكرة
-            "--window-size=1280,720",      # ✅ تقليل حجم النافذة
+            "--disable-background-timer-throttling",
+            "--disable-renderer-backgrounding",
+            "--disable-backgrounding-occluded-windows",
+            "--js-flags=--max-old-space-size=512", # نحدو الذاكرة ديال JS
+            "--window-size=1280,720",
             f"--user-agent={config.USER_AGENT}"
         ]
 
@@ -47,6 +48,7 @@ class StealthBrowser:
             java_script_enabled=True,
             user_agent=config.USER_AGENT,
             timezone_id="America/New_York",
+            color_scheme="light",
         )
 
         await self.context.add_init_script(STEALTH_JS)

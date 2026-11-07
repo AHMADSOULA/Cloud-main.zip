@@ -1,207 +1,85 @@
 import asyncio
 from playwright.async_api import expect
 from utils.logger import get_logger
-from config import config
 
 log = get_logger("Console")
-
 
 class CloudConsole:
     def __init__(self, context):
         self.context = context
 
     async def step1_welcome_screen(self, page):
-        log.info("🚀 step1: TOS")
-
         await page.wait_for_load_state("networkidle")
-        await page.wait_for_timeout(2000)
+        await page.wait_for_timeout(2000)    
         await page.keyboard.press("Enter")
-
         try:
             button = page.locator("text='I understand'")
-
             if await button.is_visible(timeout=3000):
                 await button.click()
-
-        except:
-            pass
-
+        except: pass
         await page.wait_for_load_state("networkidle")
 
     async def step2_tos_and_country(self, page):
-        log.info("🚀 step2: Terms Dialog")
-
-        agree_btn = page.get_by_role(
-            "button",
-            name="Agree and continue"
-        )
-
+        agree_btn = page.get_by_role("button", name="Agree and continue")
         try:
-            await agree_btn.wait_for(
-                state="visible",
-                timeout=10000
-            )
-
+            await agree_btn.wait_for(state="visible", timeout=8000)
             checkboxes = page.get_by_role("checkbox")
-
-            await checkboxes.nth(0).click()
-            await asyncio.sleep(1)
-            await checkboxes.nth(1).click()
-
+            if await checkboxes.count() >= 2:
+                await checkboxes.nth(0).click()
+                await asyncio.sleep(0.5)
+                await checkboxes.nth(1).click()
             await agree_btn.click()
-
             await page.wait_for_load_state("domcontentloaded")
-
         except Exception:
-            log.info(
-                "ℹ️ رسالة الشروط لم تظهر، تم التخطي تلقائياً."
-            )
+            pass
 
     async def step3_enable_api(self, page, project_id, authuser):
-        log.info("🚀 step3: Enable API")
-
-        api_url = (
-            f"https://console.cloud.google.com/apis/library/"
-            f"run.googleapis.com?project={project_id}&authuser={authuser}"
-        )
-
-        await page.goto(
-            api_url,
-            wait_until="domcontentloaded"
-        )
-
+        api_url = f"https://console.cloud.google.com/apis/library/run.googleapis.com?project={project_id}&authuser={authuser}"
+        await page.goto(api_url, wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
-
-        enable_btn = page.get_by_role(
-            "button",
-            name="Enable"
-        )
-
-        manage_btn = page.get_by_role(
-            "button",
-            name="Manage"
-        )
-
-        disable_btn = page.get_by_text("Disable API")
-
+        
+        enable_btn = page.get_by_role("button", name="Enable")
+        manage_btn = page.get_by_role("button", name="Manage")
+        
         try:
-            await expect(
-                enable_btn.or_(manage_btn)
-            ).to_be_visible(timeout=15000)
-
+            await expect(enable_btn.or_(manage_btn)).to_be_visible(timeout=15000)
             if await enable_btn.is_visible():
                 await enable_btn.click(timeout=10000)
-
-                await expect(
-                    manage_btn.or_(disable_btn)
-                ).to_be_visible(timeout=60000)
-
-            elif await manage_btn.is_visible():
-                pass
-
+                await expect(manage_btn).to_be_visible(timeout=60000)
         except Exception as e:
-            log.warning(f"⚠️ مشكل فـ API: {str(e)}")
+             log.warning(f"⚠️ مشكل فـ API: {e}")
 
-    async def step4_create_cloud_run(
-        self,
-        page,
-        project_id,
-        authuser,
-        image
-    ):
-        log.info("🚀 step4: Create Cloud Run")
-
-        run_url = (
-            f"https://console.cloud.google.com/run/create?"
-            f"project={project_id}&authuser={authuser}"
-        )
-
-        await page.goto(
-            run_url,
-            wait_until="domcontentloaded"
-        )
-
-        await page.wait_for_timeout(5000)
-
+    async def step4_create_cloud_run(self, page, project_id, authuser, image):
+        # ملاحظة: تم نقل الانتقال لـ Cloud Run إلى ملف sso_flow لتحديث الرسالة
+        
         try:
-            label = page.get_by_text(
-                "Container Image URL"
-            ).first
-
+            label = page.get_by_text("Container Image URL").first
             await label.click(timeout=15000)
-
             await page.wait_for_timeout(500)
-
-            await page.keyboard.type(
-                image,
-                delay=50
-            )
-
+            await page.keyboard.type(image, delay=50)
         except Exception as e:
-            raise Exception(
-                f"فشل في إدخال صورة الحاوية: {str(e)}"
-            )
-
+            raise Exception(f"فشل في إدخال صورة الحاوية: {str(e)}")
+        
         await page.wait_for_timeout(3000)
-
+        
         try:
-            await page.get_by_role(
-                "radio",
-                name="Allow public access"
-            ).click()
-
-            await page.get_by_role(
-                "radio",
-                name="Instance-based"
-            ).click()
-
+            await page.get_by_role("radio", name="Allow public access").click(timeout=8000)
+            await page.get_by_role("radio", name="Instance-based").click(timeout=8000)
             try:
-                await page.get_by_role(
-                    "button",
-                    name="Hide"
-                ).click(timeout=2000)
-
-            except:
-                pass
-
+                await page.get_by_role("button", name="Hide").click(timeout=2000)
+            except: pass
             await page.keyboard.press("End")
-
             await page.wait_for_timeout(1000)
-
-            create_btn = page.get_by_role(
-                "button",
-                name="Create"
-            )
-
-            await create_btn.click(force=True)
-
+            
+            create_btn = page.get_by_role("button", name="Create")
+            await create_btn.click(force=True, timeout=15000)
         except Exception as e:
-            raise Exception(
-                f"فشل في ضغط Create: {str(e)}"
-            )
+            raise Exception(f"فشل في ضغط Create: {str(e)}")
 
     async def step5_get_deployed_url(self, page):
-        log.info("🚀 step5: انتظار الرابط")
-
         try:
-            link_locator = page.locator(
-                'a[href*="run.app"]'
-            )
-
-            # انتظار ظهور رابط Cloud Run
-            await link_locator.wait_for(
-                state="visible",
-                timeout=config.DEPLOY_LINK_TIMEOUT * 1000
-            )
-
-            href = await link_locator.get_attribute("href")
-
-            if not href:
-                raise TimeoutError("deployment_timeout")
-
-            return href
-
+            link_locator = page.locator('a[href*="run.app"]')
+            await link_locator.wait_for(state="visible", timeout=120000) 
+            return await link_locator.get_attribute("href")
         except Exception as e:
-            raise TimeoutError(
-                "deployment_timeout"
-            ) from e
+            raise Exception(f"انتهى الوقت بدون رابط: {str(e)}")

@@ -71,8 +71,8 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     default_image = "docker.io/ajndjd2/ahmed-vip1"
     
-    # ✅ بدا التنفيذ فـ صمت تام (بلا رسالة ترحيبية)
-    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, update.effective_message, context))
+    # ✅ كنمررو context.bot مباشرة
+    asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, context.bot, context))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -100,11 +100,12 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("ℹ️ أرسل رابط Qwiklabs SSO للبدء.")
 
-async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
+async def run_deploy_task(chat_id, user_id, sso_url, image, bot, context):
     browser = StealthBrowser()
     try:
         ctx = await browser.start()
-        result = await run_sso_flow(ctx, sso_url, image=image, sender=msg)
+        # ✅ هنا فين كان المشكل: ولينا كناديو run_sso_flow بالمعطيات الصحيحة
+        result = await run_sso_flow(ctx, bot, chat_id, sso_url, image)
         
         if result.get("success"):
             domain = result.get("domain")
@@ -113,7 +114,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             
             # ✅ إرسال الرابط بلا http
             clean_url = result['final_url'].replace("https://", "").replace("http://", "")
-            await context.bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{clean_url}</code>", parse_mode=ParseMode.HTML)
+            await bot.send_message(chat_id=chat_id, text=f"✅ <b>تم النشر بنجاح!</b>\n\n🌐 رابط run.app:\n<code>{clean_url}</code>", parse_mode=ParseMode.HTML)
             
             # ✅ إرسال ملف Youtube فقط
             try:
@@ -121,7 +122,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
                 if new_uri:
                     bio = io.BytesIO(new_uri.encode("utf-8"))
                     bio.name = f"{DARK_FILE_YOUTUBE['name']}_{flag} - {domain}.dark"
-                    await context.bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
+                    await bot.send_document(chat_id=chat_id, document=bio, filename=bio.name)
             except Exception as file_err:
                 log.error(f"❌ فشل إرسال ملف Youtube: {file_err}")
                     
@@ -129,21 +130,16 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
-            # ✅ هنا كنكتبو الرسالة اللي كتجي تحت الصورة
-            if err_code == "service_already_exists":
-                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
-            elif err_code == "account_deleted":
-                error_msg = "❌ الحساب محذوف (Account Deleted).\nيرجى إرسال رابط SSO جديد."
-            elif err_code == "invalid_docker_image": 
-                error_msg = "❌ فشل إدخال صورة Docker.\nتأكد من الرابط أو أعد المحاولة."
-            elif err_code == "image_field_empty": 
-                error_msg = "❌ فشل العثور على حقل الحاوية.\nقد يكون هناك ضغط على Google."
+            if err_code == "step4_failed":
+                error_msg = f"❌ فشل إنشاء Cloud Run.\n{detail}"
+            elif err_code == "step5_failed":
+                error_msg = f"❌ فشل في الحصول على الرابط.\n{detail}"
             else: 
                 error_msg = f"❌ فشل النشر:\n{detail or 'حدث خطأ غير متوقع.'}"
                 
-            await context.bot.send_message(chat_id=chat_id, text=error_msg)
+            await bot.send_message(chat_id=chat_id, text=error_msg)
                 
     except Exception as e:
-        await context.bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:100]}")
+        await bot.send_message(chat_id=chat_id, text=f"❌ خطأ: {str(e)[:100]}")
     finally:
         await browser.close()

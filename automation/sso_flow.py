@@ -16,27 +16,6 @@ def extract_domain_from_service_url(service_url: str) -> str:
         return urlparse(s).netloc.strip()
     return s.replace("http://", "").replace("https://", "").split("/")[0].strip()
 
-def extract_authuser(page_url: str) -> str:
-    try:
-        qs = parse_qs(urlparse(page_url).query)
-        return qs.get('authuser', ['1'])[0]
-    except: return '1'
-
-async def _is_blocked(page) -> str:
-    try:
-        url = page.url.lower()
-        if "accountdeleted" in url or "deletedaccount" in url: return "account_deleted"
-        result = await page.evaluate("""
-            () => {
-                const body = (document.body.innerText || '').toLowerCase();
-                if (body.includes('account deleted') || body.includes('account has been deleted')) return 'account_deleted';
-                if (body.includes('session expired') || body.includes('invalid link')) return 'expired';
-                return null;
-            }
-        """)
-        return result
-    except: return None
-
 async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag="@user") -> dict:
     project_id = extract_project_id(sso_url)
     if not project_id:
@@ -46,7 +25,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
     flag = "🇺🇸" if region == "us-central1" else "🇧🇪"
 
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
-    
     status_msg = await sender.reply_text("⏳ جاري التنفيذ... [0/6]") if sender else None
 
     async def update_status(step, text=""):
@@ -66,83 +44,51 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
                 await console._shot(page, "📸 تفاصيل الخطأ:")
             return {"success": False, "error": err_code, "message": extra_msg}
 
-        # 1
+        # 1. فتح الرابط
         await update_status(1, "فتح الرابط")
-        try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
-        except: await page.goto(sso_url, wait_until="commit", timeout=60000)
+        try: 
+            await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
+        except:
+            await page.goto(sso_url, wait_until="commit", timeout=60000)
         
-        await page.wait_for_timeout(2000)
-        await console._shot(page, "📸 خطوة 1: فتح الرابط")
-        
-        blocked = await _is_blocked(page)
-        if blocked: return await handle_error(blocked)
-
-        # 2
+        # 2. خطوة TOS الأولى
         await update_status(2, "قبول التوجيهات")
-        try: await console.step1_welcome_screen(page)
-        except: pass
+        await console.step1_welcome_screen(page)
         
+        # ✅ الانتظار بحال GC.py
         try:
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
-        except: pass
-        
-        await page.wait_for_timeout(2000)
-        await console._shot(page, "📸 خطوة 2: بعد الدخول للحساب")
-        
-        blocked = await _is_blocked(page)
-        if blocked: return await handle_error(blocked)
+        except Exception as e:
+            log.warning(f"⚠️ ما وصلناش Dashboard بـ URL: {e}")
 
-        # 3
+        current_qs = parse_qs(urlparse(page.url).query)
+        authuser = current_qs.get('authuser', ['1'])[0]
+
+        # 3. خطوة الشروط
         await update_status(3, "قبول الشروط")
-        try: await console.step2_terms_dialog(page)
-        except: pass
-        
-        await page.wait_for_timeout(2000)
-        await console._shot(page, "📸 خطوة 3: بعد قبول الشروط")
+        await console.step2_tos_and_country(page)
 
-        authuser = extract_authuser(page.url)
-
-        # 4
+        # 4. خطوة تفعيل API
         await update_status(4, "تفعيل API")
-        try: 
+        try:
             await console.step3_enable_api(page, project_id, authuser)
         except Exception as e:
-            if "Target page, context or browser has been closed" in str(e):
-                return await handle_error("browser_crashed", "❌ المتصفح طاح.")
-        
-        await page.wait_for_timeout(2000)
-        await console._shot(page, "📸 خطوة 4: تفعيل API")
+            return await handle_error("step3_failed", str(e))
 
-        # 5
+        # 5. خطوة إنشاء Cloud Run
         await update_status(5, "إنشاء الخدمة")
         try:
             await console.step4_create_cloud_run(page, project_id, authuser, image, region=region)
         except Exception as e:
-            err_str = str(e)
-            if "Target page, context or browser has been closed" in err_str:
-                return await handle_error("browser_crashed", "❌ المتصفح طاح.")
-            elif "service_already_exists" in err_str:
-                return await handle_error("service_already_exists", "❌ يوجد خدمة تعمل بنفس الاسم.")
-            else:
-                return await handle_error("step4_failed", err_str)
+            return await handle_error("step4_failed", str(e))
 
-        # 6
+        # 6. انتظار الرابط
         await update_status(6, "انتظار الرابط")
         try:
             final_url = await console.step5_get_deployed_url(page)
             domain = extract_domain_from_service_url(final_url)
         except Exception as e:
-            err_str = str(e)
-            if "service_already_exists" in err_str:
-                return await handle_error("service_already_exists", "❌ يوجد خدمة تعمل بنفس الاسم.")
-            elif "deployment_failed" in err_str:
-                return await handle_error("deployment_failed", "❌ فشل النشر.")
-            elif "timeout_waiting_for_url" in err_str:
-                return await handle_error("timeout_waiting_for_url", "❌ انتهى وقت الانتظار.")
-            else:
-                return await handle_error("step5_failed", err_str)
-                
-        await console._shot(page, "📸 خطوة 6: النجاح")
+            return await handle_error("step5_failed", str(e))
 
         if status_msg:
             try: await status_msg.delete()

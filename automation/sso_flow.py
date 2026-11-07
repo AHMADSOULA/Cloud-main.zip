@@ -75,12 +75,13 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
 
     except Exception as e:
         log.error(f"❌ فشل في الخطوة: {e}")
+        # التصوير عند الخطأ فقط
         if page and not page.is_closed():
             try:
                 path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
                 await page.screenshot(path=path, full_page=True, type="jpeg", quality=60, timeout=5000)
                 with open(path, "rb") as f:
-                    await bot.send_photo(chat_id=chat_id, photo=f) # صورة فقط عند الخطأ
+                    await bot.send_photo(chat_id=chat_id, photo=f)
                 import os
                 os.remove(path)
             except Exception as shot_err:

@@ -9,30 +9,80 @@ class CloudConsole:
         self.context = context
 
     async def step1_welcome_screen(self, page):
-        log.info("🚀 step1: TOS")
-        await page.wait_for_load_state("networkidle")
-        await page.wait_for_timeout(2000)    
-        await page.keyboard.press("Enter")
+        log.info("🚀 step1: TOS الأولى")
         try:
-            button = page.locator("text='I understand'")
-            if await button.is_visible(timeout=3000):
-                await button.click()
-        except: pass
-        await page.wait_for_load_state("networkidle")
+            await page.wait_for_load_state("networkidle", timeout=10000)
+            await page.wait_for_timeout(2000)    
+            await page.keyboard.press("Enter")
+            try:
+                button = page.locator("text='I understand'")
+                if await button.is_visible(timeout=3000):
+                    await button.click()
+            except: pass
+            await page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception as e:
+            log.warning(f"⚠️ step1: {e}")
 
     async def step2_tos_and_country(self, page):
-        log.info("🚀 step2: Terms Dialog")
-        agree_btn = page.get_by_role("button", name="Agree and continue")
+        log.info("🚀 step2: Terms Dialog (Country + Agree)")
         try:
-            await agree_btn.wait_for(state="visible", timeout=10000)
-            checkboxes = page.get_by_role("checkbox")
-            await checkboxes.nth(0).click()
-            await asyncio.sleep(1)
-            await checkboxes.nth(1).click()
-            await agree_btn.click()
+            # ✅ نستناو شوية باش الديالوغ يبان
+            await page.wait_for_timeout(3000)
+            
+            # 1. نختارو الدولة إلا كان كاين الـ Dropdown
+            try:
+                select_el = page.locator("select").first
+                if await select_el.is_visible(timeout=3000):
+                    options = await select_el.locator("option").all()
+                    if len(options) > 1:
+                        await select_el.select_option(index=1)
+                        log.info("✅ تم اختيار الدولة")
+                        await page.wait_for_timeout(1000)
+            except:
+                pass
+
+            # 2. نضغطو على checkboxes بـ JavaScript باش نضمنو 100%
+            try:
+                await page.evaluate("""
+                    () => {
+                        const cbs = document.querySelectorAll('mat-checkbox, [role="checkbox"], input[type="checkbox"]');
+                        cbs.forEach(cb => {
+                            if (!cb.checked && cb.getAttribute('aria-checked') !== 'true') {
+                                cb.click();
+                            }
+                        });
+                    }
+                """)
+                await page.wait_for_timeout(1000)
+            except:
+                pass
+
+            # 3. نضغطو على Agree and continue
+            agree_btn = page.get_by_role("button", name="Agree and continue")
+            try:
+                await agree_btn.wait_for(state="visible", timeout=5000)
+                await agree_btn.click(timeout=5000)
+                log.info("✅ تم الضغط على Agree and continue")
+            except:
+                # fallback بجافاسكريبت إلا كان الزر معطل
+                await page.evaluate("""
+                    () => {
+                        for (const el of document.querySelectorAll('button, [role="button"]')) {
+                            const t = (el.innerText || '').trim().toLowerCase();
+                            if (t.includes('agree and continue')) {
+                                el.disabled = false;
+                                el.removeAttribute('disabled');
+                                el.click();
+                            }
+                        }
+                    }
+                """)
+                log.info("✅ تم الضغط على Agree (JS fallback)")
+            
             await page.wait_for_load_state("domcontentloaded")
-        except Exception:
-            pass
+            await page.wait_for_timeout(2000)
+        except Exception as e:
+            log.warning(f"⚠️ step2: {e}")
 
     async def step3_enable_api(self, page, project_id, authuser):
         log.info("🚀 step3: Enable API")

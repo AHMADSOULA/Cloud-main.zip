@@ -73,21 +73,6 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         except Exception as e:
             log.warning(f"⚠️ فشل إرسال صورة {caption_text}: {e}")
 
-    # ✅ التقاط التوكن من الاستجابات (أكثر طريقة موثوقة)
-    async def on_response(response):
-        nonlocal access_token
-        if access_token: return
-        try:
-            if "oauth2" in response.url or "token" in response.url:
-                if response.status == 200:
-                    data = await response.json()
-                    if isinstance(data, dict):
-                        token = data.get("access_token") or data.get("id_token")
-                        if token:
-                            access_token = token
-                            log.info("✅ تم التقاط الـ Token من استجابة الشبكة!")
-        except: pass
-
     def on_request(request):
         nonlocal access_token
         if access_token: return
@@ -96,13 +81,11 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
             if auth and auth.startswith("Bearer "):
                 access_token = auth.replace("Bearer ", "").strip()
                 log.info("✅ تم التقاط الـ Token من طلب الشبكة!")
-        except: pass
+        except Exception: pass
 
     try:
         page = await context.new_page()
-        # ✅ نسجلو المستمعين قبل أي حركة
         page.on("request", on_request)
-        page.on("response", on_response)
         await page.add_init_script(INTERCEPTOR_JS)
         
         # 1. فتح الرابط
@@ -110,7 +93,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         try: await page.goto(sso_url, wait_until="domcontentloaded", timeout=60000)
         except: await page.goto(sso_url, wait_until="commit", timeout=60000)
         
-        # 2. الباسورد
+        # 2. تسجيل الدخول
         await update_msg("2) جاري تسجيل الدخول...")
         await page.wait_for_timeout(3000)
         try:
@@ -125,19 +108,19 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         except Exception as e:
             log.info(f"تجاوز الباسورد: {e}")
 
-        # 3. التوجيهات
-        await update_msg("3) قبول التوجيهات...")
+        # ✅ 3. التوجيهات وانتظار الداشبورد (بحال GC.py)
+        await update_msg("3) قبول التوجيهات وانتظار الدخول...")
         await console.step1_welcome_screen(page)
         
         try:
+            # كنستناو الداشبورد بحال GC.py
             await page.wait_for_url("**/home/dashboard**", timeout=45000)
         except Exception as e:
             log.warning(f"⚠️ ما وصلناش Dashboard: {e}")
 
-        # ✅ التصوير فور الدخول للوحة التحكم
-        await take_screenshot("📸 الخطوة 3: تم الدخول إلى لوحة تحكم Google Cloud")
+        await take_screenshot("📸 الخطوة 3: تم الدخول إلى Google Cloud")
 
-        # 4. الشروط
+        # ✅ 4. الشروط
         await update_msg("4) قبول الشروط...")
         await console.step2_tos_and_country(page)
 
@@ -145,7 +128,6 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
         await update_msg("5) جاري استخراج الـ Token...")
         await page.wait_for_timeout(3000)
 
-        # نجبرو المتصفح يصيفط طلب باش نلتقطو التوكن من الشبكة
         if not access_token:
             try:
                 await page.evaluate("""
@@ -160,22 +142,8 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, status_msg=None, pas
                 await page.wait_for_timeout(3000)
             except: pass
 
-        # ✅ الحل الاحتياطي: من المتغير اللي حقناه
         if not access_token:
-            try:
-                access_token = await page.evaluate("() => window._gcp_captured_token")
-            except: pass
-
-        # ✅ الحل الاحتياطي الأخير: من window.gapi
-        if not access_token:
-            try:
-                access_token = await page.evaluate("""
-                    () => {
-                        try { return window.gapi.auth.getToken().access_token; } catch(e) {}
-                        try { return window.gapi.auth2.getAuthInstance().currentUser.get().getAuthResponse().access_token; } catch(e) {}
-                        return null;
-                    }
-                """)
+            try: access_token = await page.evaluate("() => window._gcp_captured_token")
             except: pass
 
         if not access_token:

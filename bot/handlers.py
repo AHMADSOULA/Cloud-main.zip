@@ -266,7 +266,6 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
         ctx = await browser.start()
         result = await run_sso_flow(ctx, context.bot, chat_id, sso_url, status_msg)
         
-        # حذف رسالة التحميل
         try: await status_msg.delete()
         except: pass
 
@@ -275,7 +274,6 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
             region = result.get("region", "us-central1")
             elapsed = result.get("time_taken", 0)
             
-            # 1. رسالة النجاح المطلوبة
             success_text = (
                 f"تم انشاء رابط run.app\n"
                 f"domain:{domain}\n"
@@ -284,7 +282,6 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
             )
             await context.bot.send_message(chat_id, success_text, disable_web_page_preview=True)
             
-            # 2. VLESS
             vless_result = VLESS_TEMPLATE.format(domain=domain)
             await context.bot.send_message(
                 chat_id, 
@@ -292,7 +289,6 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
                 parse_mode='html'
             )
             
-            # 3. JSON
             json_result = JSON_TEMPLATE.replace("__DOMAIN__", domain)
             await context.bot.send_message(
                 chat_id, 
@@ -300,7 +296,6 @@ async def process_deploy(context, user_id, chat_id, sso_url, password=None):
                 parse_mode='html'
             )
             
-            # 4. ملف Dark
             new_uri = build_darktunnel_uri_with_host(domain)
             if new_uri:
                 safe_domain = re.sub(r"[^a-z0-9\.\-]+", "_", domain.lower()).strip("_")

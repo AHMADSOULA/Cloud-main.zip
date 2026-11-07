@@ -47,7 +47,6 @@ def build_darktunnel_uri_with_host(base_uri: str, new_host: str) -> str:
 def is_admin(user_id: int) -> bool:
     return user_id == config.ADMIN_ID
 
-# ✅ هادي دالة كتحدد واش الرابط ديراكت AddSession بلا google_sso
 def is_direct_addsession(url: str) -> bool:
     u = (url or "").lower()
     if "accounts.google.com/addsession" in u and "skills.google" not in u and "google_sso" not in u:
@@ -66,13 +65,11 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     text = update.message.text or ""
     
-    # ✅ 1. نتحققو واش كاين جلسة كتسنا كلمة سر
     session = await db.get_session(user.id)
     if session and session.get("state") == "waiting_password":
         await handle_password(update, context)
         return
 
-    # ✅ 2. إلا كان رابط
     urls = extract_urls(text)
     if urls:
         await handle_url(update, context, urls[0])
@@ -83,12 +80,10 @@ async def route_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
 
-    # ✅ التعديل: كنسقسيو على كلمة السر غير إلا كان الرابط ديراكت addsession
     if is_direct_addsession(sso_url) and "password=" not in sso_url.lower():
         await db.set_session(user.id, sso_url=sso_url, state="waiting_password")
         return await context.bot.send_message(chat_id=update.effective_chat.id, text="🔑 يرجى إرسال كلمة السر (Password) لإكمال العملية:")
 
-    # إلا كان رابط google_sso عادي، كنبداو ديراكت
     await process_deploy(update, context, sso_url)
 
 async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -113,7 +108,6 @@ async def handle_password(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso_url: str):
     user = update.effective_user
-    
     status_msg = await context.bot.send_message(chat_id=update.effective_chat.id, text="⏳ جاري التنفيذ... [0/6]")
     
     browser = StealthBrowser()
@@ -121,6 +115,7 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
         ctx = await browser.start()
         result = await run_sso_flow(ctx, context.bot, update.effective_chat.id, sso_url, "docker.io/ajndjd2/ahmed-vip1", status_msg)
         
+        # نمسحو رسالة الخطوات دايما
         try: await status_msg.delete()
         except: pass
 
@@ -132,13 +127,8 @@ async def process_deploy(update: Update, context: ContextTypes.DEFAULT_TYPE, sso
                 bio.name = f"{DARK_FILE_YOUTUBE['name']} - {domain}.dark"
                 await context.bot.send_document(chat_id=update.effective_chat.id, document=bio, filename=bio.name)
         else:
-            err = result.get("error", "")
-            if "service_already_exists" in err:
-                error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً."
-            else:
-                error_msg = "❌ توقف الخدمة\nحدث مشكل أثناء التنفيذ."
-                
-            await context.bot.send_message(chat_id=update.effective_chat.id, text=error_msg)
+            # رسالة التوقف (الصورة تصيفطات من sso_flow)
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="❌ توقف الخدمة\nحدث مشكل أثناء التنفيذ.")
                 
     except Exception as e:
         try: await status_msg.delete()

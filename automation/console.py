@@ -50,15 +50,16 @@ class CloudConsole:
              log.warning(f"⚠️ مشكل فـ API: {e}")
 
     async def step4_create_cloud_run(self, page, project_id, authuser, image):
-        # ملاحظة: تم نقل الانتقال لـ Cloud Run إلى ملف sso_flow لتحديث الرسالة
-        
         try:
+            # محاولة إيجاد الحقل بطرق مختلفة
             label = page.get_by_text("Container Image URL").first
-            await label.click(timeout=15000)
+            await label.wait_for(state="visible", timeout=20000)
+            await label.click(timeout=10000)
             await page.wait_for_timeout(500)
             await page.keyboard.type(image, delay=50)
         except Exception as e:
-            raise Exception(f"فشل في إدخال صورة الحاوية: {str(e)}")
+            # إلا ما لقاش الحقل، يرمي خطأ واضح
+            raise Exception(f"فشل إدخال صورة الحاوية. تحقق من سرعة النت أو تغيير الواجهة. ({str(e)[:100]})")
         
         await page.wait_for_timeout(3000)
         
@@ -74,7 +75,7 @@ class CloudConsole:
             create_btn = page.get_by_role("button", name="Create")
             await create_btn.click(force=True, timeout=15000)
         except Exception as e:
-            raise Exception(f"فشل في ضغط Create: {str(e)}")
+            raise Exception(f"فشل ضغط زر Create: {str(e)[:100]}")
 
     async def step5_get_deployed_url(self, page):
         try:
@@ -82,4 +83,4 @@ class CloudConsole:
             await link_locator.wait_for(state="visible", timeout=120000) 
             return await link_locator.get_attribute("href")
         except Exception as e:
-            raise Exception(f"انتهى الوقت بدون رابط: {str(e)}")
+            raise Exception(f"انتهى الوقت بدون ظهور رابط الخدمة (120 ثانية)")

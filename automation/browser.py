@@ -1,6 +1,4 @@
 import os
-import tempfile
-import shutil
 from playwright.async_api import async_playwright
 from config import config
 from automation.stealth import STEALTH_JS
@@ -13,19 +11,16 @@ class StealthBrowser:
     def __init__(self):
         self.playwright = None
         self.context = None
-        self.profile_dir = None
 
     async def start(self):
         self.playwright = await async_playwright().start()
-        
-        self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
-        log.info(f"📁 Using fresh profile: {self.profile_dir}")
+        os.makedirs(config.CHROME_PROFILE_DIR, exist_ok=True)
 
         args = [
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
             "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage", # ✅ مهم جدا باش ما يطيحش فـ السيرفر
+            "--disable-dev-shm-usage",
             "--disable-gpu",
             "--disable-software-rasterizer",
             "--disable-accelerated-2d-canvas",
@@ -44,14 +39,14 @@ class StealthBrowser:
             "--hide-scrollbars",
             "--metrics-recording-only",
             "--safebrowsing-disable-auto-update",
-            "--js-flags=--max-old-space-size=512", 
+            "--renderer-process-limit=1",
+            "--js-flags=--max-old-space-size=256",
             "--window-size=1280,720",
             f"--user-agent={config.USER_AGENT}",
         ]
 
         self.context = await self.playwright.chromium.launch_persistent_context(
-            user_data_dir=self.profile_dir,
-            channel="chromium",
+            user_data_dir=config.CHROME_PROFILE_DIR,
             headless=config.HEADLESS,
             args=args,
             viewport={"width": 1280, "height": 720},
@@ -60,10 +55,13 @@ class StealthBrowser:
             timezone_id="America/New_York",
             color_scheme="light",
             java_script_enabled=True,
-            extra_http_headers={"Accept-Language": "en-US,en;q=0.9"},
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+            },
         )
 
         await self.context.add_init_script(STEALTH_JS)
+
         self.context.set_default_timeout(config.PAGE_TIMEOUT)
         self.context.set_default_navigation_timeout(config.NAV_TIMEOUT)
 
@@ -81,11 +79,4 @@ class StealthBrowser:
                 await self.playwright.stop()
             except Exception:
                 pass
-        
-        if self.profile_dir and os.path.exists(self.profile_dir):
-            try:
-                shutil.rmtree(self.profile_dir, ignore_errors=True)
-            except Exception:
-                pass
-                
         log.info("تم إغلاق المتصفح")

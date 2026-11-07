@@ -71,7 +71,7 @@ async def handle_url(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     default_image = "docker.io/ajndjd2/ahmed-vip1"
     
-    # بدا التنفيذ فـ صمت
+    # ✅ بدا التنفيذ فـ صمت تام (بلا رسالة ترحيبية)
     asyncio.create_task(run_deploy_task(update.effective_chat.id, user.id, sso_url, default_image, update.effective_message, context))
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,6 +129,7 @@ async def run_deploy_task(chat_id, user_id, sso_url, image, msg, context):
             err_code = result.get("error", "")
             detail = result.get("message", "")
             
+            # ✅ هنا كنكتبو الرسالة اللي كتجي تحت الصورة
             if err_code == "service_already_exists":
                 error_msg = "❌ يوجد خدمة تعمل بنفس الاسم حالياً.\nيرجى الانتظار أو إرسال رابط SSO جديد."
             elif err_code == "account_deleted":

@@ -30,8 +30,8 @@ class StealthBrowser:
 
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
-            channel="chromium", # تقدر تبدلها لـ "chrome" إلا كان مدخل
-            headless=False, # ✅ واجد ومهم بزاف باش نتفاداو حظر Google
+            channel="chromium",
+            headless=True, # ✅ رجعناها True باش ما يطيحش السيرفر
             args=args,
             viewport={"width": 1920, "height": 1080},
             locale="en-US",

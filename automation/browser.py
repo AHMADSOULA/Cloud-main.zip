@@ -2,8 +2,6 @@ import os
 import tempfile
 import shutil
 from playwright.async_api import async_playwright
-from config import config
-from automation.stealth import STEALTH_JS
 from utils.logger import get_logger
 
 log = get_logger("Browser")
@@ -20,6 +18,7 @@ class StealthBrowser:
         self.profile_dir = tempfile.mkdtemp(prefix="chrome_profile_")
         log.info(f"📁 Using fresh profile: {self.profile_dir}")
 
+        # ✅ نفس أوامر GC.py
         args = [
             "--no-sandbox",
             "--disable-setuid-sandbox",
@@ -31,17 +30,16 @@ class StealthBrowser:
 
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
-            channel="chromium",
-            headless=True,
+            channel="chromium", # تقدر تبدلها لـ "chrome" إلا كان مدخل
+            headless=False, # ✅ واجد ومهم بزاف باش نتفاداو حظر Google
             args=args,
             viewport={"width": 1920, "height": 1080},
             locale="en-US",
             java_script_enabled=True,
         )
 
-        await self.context.add_init_script(STEALTH_JS)
-        self.context.set_default_timeout(config.PAGE_TIMEOUT)
-        self.context.set_default_navigation_timeout(config.NAV_TIMEOUT)
+        self.context.set_default_timeout(60000)
+        self.context.set_default_navigation_timeout(120000)
 
         log.info("✅ المتصفح جاهز")
         return self.context

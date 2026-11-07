@@ -27,12 +27,12 @@ class StealthBrowser:
             "--disable-blink-features=AutomationControlled",
             "--disable-infobars",
             "--window-size=1920,1080",
-            "--disable-dev-shm-usage" # ضروري فـ السيرفر
+            "--disable-dev-shm-usage"
         ]
 
         self.context = await self.playwright.chromium.launch_persistent_context(
             user_data_dir=self.profile_dir,
-            channel="chromium", # تقدر تبدلها لـ "chrome" إلا كانت مدخلة فالسيرفر
+            channel="chromium",
             headless=True,
             args=args,
             viewport={"width": 1920, "height": 1080},
@@ -64,5 +64,3 @@ class StealthBrowser:
                 shutil.rmtree(self.profile_dir, ignore_errors=True)
             except Exception:
                 pass
-                
-        log.info("تم إغلاق المتصفح")

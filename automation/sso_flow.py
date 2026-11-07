@@ -66,7 +66,6 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
 
     console = CloudConsole(context, sender=sender, user_tag=user_tag)
     
-    # ✅ رسالة وحدة كنبدلوها
     status_msg = await sender.reply_text("⏳ جاري التنفيذ... [0/6]") if sender else None
 
     async def update_status(step, text=""):
@@ -82,9 +81,9 @@ async def run_sso_flow(context, sso_url: str, image: str, sender=None, user_tag=
             if status_msg:
                 try: await status_msg.delete()
                 except: pass
-            # ✅ تصوير الشاشة فقط عند الخطأ
+            # ✅ كنصورو هنا فقط ملي كيوقع خطأ
             if page and not page.is_closed():
-                await console._shot(page, extra_msg) 
+                await console._shot(page, extra_msg)
             return {"success": False, "error": err_code, "message": extra_msg}
 
         # 1

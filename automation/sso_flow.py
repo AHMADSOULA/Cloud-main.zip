@@ -32,7 +32,8 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
     async def update_status(step, text=""):
         if status_msg:
             try: await status_msg.edit_text(f"⏳ جاري التنفيذ... [{step}/6] {text}")
-            except: pass
+            except Exception as e:
+                log.warning(f"⚠️ ما قدرناش نحدثو الرسالة: {e}")
 
     try:
         page = await context.new_page()
@@ -75,7 +76,7 @@ async def run_sso_flow(context, bot, chat_id, sso_url: str, image: str, status_m
 
     except Exception as e:
         log.error(f"❌ فشل في الخطوة: {e}")
-        # ✅ التصوير كيوقع هنا فقط (عند الخطأ)
+        # التصوير عند الخطأ
         if page and not page.is_closed():
             try:
                 path = f"/tmp/shot_{int(asyncio.get_event_loop().time()*1000)}.jpg"
